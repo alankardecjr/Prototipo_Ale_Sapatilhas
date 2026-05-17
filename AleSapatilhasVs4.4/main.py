@@ -72,7 +72,7 @@ class SistemaAleSapatilhas:
             ("", None, None), 
             ("➕ ADICIONAR VENDAS", self.abrir_cadastro_vendas, "vendas"),
             ("📑 GERENCIAR VENDAS", self.exibir_vendas, "vendas"),
-            ("💸 ADICIONAR DESPESAS", self.abrir_cadastro_despesas, "financeiro"), 
+            ("💸 ADICIONAR DESPESAS", self.abrir_gerenciar_despesas, "financeiro"), 
             ("👤 ADICIONAR CONTATOS", self.abrir_cadastro_cliente, "clientes"),
             ("👥 GERENCIAR CONTATOS", self.exibir_clientes, "clientes"),
             ("📦 ADICIONAR PRODUTOS", self.abrir_cadastro_produto, "produtos"),
@@ -381,7 +381,7 @@ class SistemaAleSapatilhas:
                 menu.add_command(label="Editar Contato", command=self.editar_selecionado)
                 menu.add_command(label="Visualizar Contato", command=self.visualizar_cliente)
                 menu.add_separator()
-                for status in ["✓ Ativoo", "★ VIP", "⛔ Bloqueado", "✗ Inativo"]:
+                for status in ["✓ Ativo", "★ VIP", "⛔ Bloqueado", "✗ Inativo"]:
                     menu.add_command(label=status, command=lambda s=status: self._mudar_status_cliente(s))
                 
             elif self.modo_atual == "produtos":
@@ -398,7 +398,7 @@ class SistemaAleSapatilhas:
                 menu.add_command(label=f"Editar {tipo_reg}", command=self.editar_selecionado)
                 menu.add_command(label=f"Visualizar {tipo_reg}", command=self.visualizar_despesa)
                 menu.add_separator()
-                for status in ["◎ Pendentendente", "✓ Pago", "⚠ Atrasado", "✗ Cancelado"]:
+                for status in ["◎ Pendente", "✓ Pago", "⚠ Atrasado", "✗ Cancelado"]:
                     menu.add_command(label=status, command=lambda s=status: self._mudar_status_despesa(s))
                 
             elif self.modo_atual == "vendas":
@@ -409,6 +409,7 @@ class SistemaAleSapatilhas:
                     menu.add_command(label=status, command=lambda s=status: self._mudar_status_venda(s))
                 
             menu.post(event.x_root, event.y_root)
+
     def excluir_logico(self):
         item = self.tree.selection()
         if not item: return
@@ -418,6 +419,7 @@ class SistemaAleSapatilhas:
             if self.modo_atual == "clientes":
                 database.atualizar_cliente(id_banco, status_cliente='Inativo')
                 self.exibir_clientes()
+
             elif self.modo_atual == "produtos":
                 database.atualizar_produto(id_banco, status_item='Indisponível')
                 self.exibir_produtos()
@@ -441,43 +443,7 @@ class SistemaAleSapatilhas:
                     self.tree.detach(item)
 
     # --- Funções do menu de contexto ---
-    def visualizar_cliente(self):
-        item = self.tree.selection()
-        if not item: return
-        with database.conectar() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT tipo, nome, cpf, telefone, email, aniversario, tamanho_calcado, endereco_completo, bairro, cidade, cep, observacao, limite_credito, status_cliente FROM clientes WHERE id = ?", (item[0],))
-            dados = cursor.fetchone()
-        if not dados: return
-        
-        janela = tk.Toplevel(self.root)
-        janela.title("Visualizar Contato")
-        janela.configure(bg=self.bg_fundo)
-        ui_utils.calcular_dimensoes_janela(janela, largura_desejada=560, altura_desejada=620)
-        
-        info_text = f"""
-Tipo: {dados[0]}
-Nome: {dados[1]}
-CPF: {dados[2] or 'N/A'}
-Telefone: {dados[3]}
-Email: {dados[4] or 'N/A'}
-Aniversário: {dados[5] or 'N/A'}
-Tamanho Calçado: {dados[6] or 'N/A'}
-Endereço: {dados[7] or 'N/A'}
-Bairro: {dados[8] or 'N/A'}
-Cidade: {dados[9] or 'N/A'}
-CEP: {dados[10] or 'N/A'}
-Observação: {dados[11] or 'N/A'}
-Limite de Crédito: R$ {dados[12]:.2f}
-Status: {dados[13]}
-        """
-
-        frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
-        frame.pack(fill="both", expand=True)
-        tk.Label(frame, text="👤 VISUALIZAR CONTATO", bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 14, "bold")).pack(pady=(0, 20))
-        tk.Label(frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Courier New", 10), justify="left", relief="solid", borderwidth=1, padx=10, pady=10).pack(fill="both", expand=True)
-        tk.Button(frame, text="FECHAR", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack(pady=10)
-
+    # Cada função de mudança de status agora inclui uma confirmação e, no caso das despesas, uma lógica específica para lidar com a data de pagamento.
     def _mudar_status_cliente(self, novo_status):
         item = self.tree.selection()
         if item and messagebox.askyesno("Confirmar", f"Alterar status para '{novo_status}'?"):
@@ -546,19 +512,8 @@ Status: {dados[13]}
                 cursor.execute("UPDATE vendas SET status_venda = ? WHERE id = ?", (novo_status, item[0]))
                 conn.commit()
             self.exibir_vendas()
-
-    def atualizar_lista(self):
-        if self.modo_atual == "clientes":
-            self.exibir_clientes()
-        elif self.modo_atual == "produtos":
-            self.exibir_produtos()
-        elif self.modo_atual == "financeiro":
-            self.exibir_financeiro()
-        elif self.modo_atual == "vendas":
-            self.exibir_vendas()
-        elif self.modo_atual == "dashboard":
-            self.exibir_dashboard()
-
+  
+    # --- Função de edição específica para vendas, que abre a janela de cadastro de vendas já preenchida com os dados da venda selecionada ---
     def editar_venda(self):
         item = self.tree.selection()
         if not item: return
@@ -571,7 +526,24 @@ Status: {dados[13]}
                 dados_venda = {'id': dados[0], 'cliente': f"{dados[1]} - {dados[2]}", 'total': dados[3], 'forma': dados[4], 'parcelas': dados[5], 'desconto': dados[6], 'data': dados[7]}
                 JanelaCadastroVendas(self.root, dados_venda=dados_venda)
                 self.exibir_vendas()
-
+  
+    def editar_despesa(self):
+        item = self.tree.selection()
+        if not item: return
+        if not messagebox.askyesno("Confirmar", "Deseja editar este lançamento financeiro?", parent=self.root):
+            return
+        id_banco = item[0]
+        
+        from gerenciar_despesas import JanelaGerenciarDespesas
+        with database.conectar() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM financeiro WHERE id=?", (id_banco,))
+            dados = cursor.fetchone()
+            if dados:
+                JanelaGerenciarDespesas(self.root, dados_despesa=dados)
+                self.exibir_financeiro()
+    
+    # --- Função de visualização detalhada para vendas, que abre uma janela mostrando um resumo completo da venda selecionada, incluindo itens, cliente, forma de pagamento e status ---
     def visualizar_venda(self):
         item = self.tree.selection()
         if not item: return
@@ -580,6 +552,44 @@ Status: {dados[13]}
         from cadastro_vendas import VisualizarRecibo
         VisualizarRecibo(self.root, id_venda=item[0])
 
+    def visualizar_cliente(self):
+        item = self.tree.selection()
+        if not item: return
+        with database.conectar() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT tipo, nome, cpf, telefone, email, aniversario, tamanho_calcado, endereco_completo, bairro, cidade, cep, observacao, limite_credito, status_cliente FROM clientes WHERE id = ?", (item[0],))
+            dados = cursor.fetchone()
+        if not dados: return
+        
+        janela = tk.Toplevel(self.root)
+        janela.title("Visualizar Contato")
+        janela.configure(bg=self.bg_fundo)
+        ui_utils.calcular_dimensoes_janela(janela, largura_desejada=560, altura_desejada=620)
+        
+        info_text = f"""
+Tipo: {dados[1]}
+Nome: {dados[2]}
+CPF: {dados[3] or 'N/A'}
+Telefone: {dados[4] or 'N/A'}
+Email: {dados[5] or 'N/A'}
+Aniversário: {dados[6] or 'N/A'}
+Tamanho Calçado: {dados[7] or 'N/A'}
+Endereço: {dados[8] or 'N/A'}
+Bairro: {dados[9] or 'N/A'}
+Cidade: {dados[10] or 'N/A'}
+CEP: {dados[11] or 'N/A'}
+Observação: {dados[12] or 'N/A'}
+Limite de Crédito: R$ {dados[13]:.2f}
+Status: {dados[14]}
+        """
+
+        frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
+        frame.pack(fill="both", expand=True)
+        tk.Label(frame, text="👤 VISUALIZAR CONTATO", bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 14, "bold")).pack(pady=(0, 20))
+        tk.Label(frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Courier New", 10), justify="left", relief="solid", borderwidth=1, padx=10, pady=10).pack(fill="both", expand=True)
+        tk.Button(frame, text="FECHAR", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack(pady=10)
+    
+    
     def visualizar_despesa(self):
         item = self.tree.selection()
         if not item: return
@@ -640,6 +650,20 @@ Recorrência: {recorrencia or 'Não Recorrente'}
                 cursor.execute("SELECT * FROM produtos WHERE id = ?", (item[0],))
                 dados = cursor.fetchone()
                 if dados: VisualizarProduto(self.root, dados)
+
+    # --- Função para atualizar a lista exibida com base no modo atual, garantindo que as alterações sejam refletidas imediatamente após ações de edição ou status ---
+    def atualizar_lista(self):
+        if self.modo_atual == "clientes":
+            self.exibir_clientes()
+        elif self.modo_atual == "produtos":
+            self.exibir_produtos()
+        elif self.modo_atual == "financeiro":
+            self.exibir_financeiro()
+        elif self.modo_atual == "vendas":
+            self.exibir_vendas()
+        elif self.modo_atual == "dashboard":
+            self.exibir_dashboard()
+
 
     def confirmar_saida(self):
         if messagebox.askyesno("Sair", "Deseja encerrar o sistema Ale Sapatilhas?"):
