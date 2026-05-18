@@ -95,7 +95,6 @@ class SistemaAleSapatilhas:
 
         # (texto, callback, modo) — modo agrupa telas relacionadas na Treeview
         botoes = [
-            ("", None, None),
             ("➕ GERAR VENDAS", self.abrir_cadastro_vendas, "vendas"),
             ("📑 GERENCIAR VENDAS", self.exibir_vendas, "vendas"),
             #("💰 GERENCIAR RECEITAS", self.abrir_gerenciar_receitas, "financeiro"),
@@ -109,7 +108,7 @@ class SistemaAleSapatilhas:
             ("📉 FLUXO DE CAIXA", self.exibir_financeiro, "financeiro"),
             ("📊 DASHBOARD", self.exibir_dashboard, "dashboard"),
             ("🔄 ATUALIZAR", self.atualizar_lista, None),
-            ("", None, None), ("", None, None),
+            ("", None, None),
             ("🚪 SAIR", self.confirmar_saida, None)
         ]
 
@@ -236,7 +235,7 @@ class SistemaAleSapatilhas:
         self.ent_busca.delete(0, tk.END)
         self._inserir_placeholder(None)
         self.root.focus()
-        # Executa a restauração da lista original baseado no modo atual
+        #Executa a restauração da lista original baseado no modo atual
         self.atualizar_lista()
 
     def executar_comando_menu(self, comando, modo, btn=None):

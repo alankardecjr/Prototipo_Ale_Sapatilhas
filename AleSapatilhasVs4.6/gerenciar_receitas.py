@@ -40,7 +40,7 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.configure(bg=self.bg_fundo)
         self.resizable(False, False)
         
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=850)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=680)
         
         self.receita_id = dados_receita[0] if dados_receita else None
         self.cliente_selecionado_id = None
@@ -223,10 +223,10 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         # --- BOTÕES DE AÇÃO OPERACIONAL (Dual Mode e Hover) ---
         texto_btn = "ATUALIZAR RECEITA" if self.receita_id else "SALVAR RECEITA"
         self.btn_salvar = tk.Button(main_frame, text=texto_btn, bg=self.cor_btn_acao, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.validar_e_salvar)
-        self.btn_salvar.grid(row=7, column=0, columnspan=3, pady=(10, 0), sticky="ew", ipady=4)
+        self.btn_salvar.grid(row=7, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
         
         self.btn_deletar = tk.Button(main_frame, text="ESTORNAR / DELETAR TITULO", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.excluir_crud)
-        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=2, sticky="ew", ipady=4)
+        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
         self.btn_deletar.grid_remove()
 
         self.btn_cancelar = tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_btn_sair, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.destroy)

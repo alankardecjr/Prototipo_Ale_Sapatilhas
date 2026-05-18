@@ -40,7 +40,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.resizable(False, False)
         
         # --- Aplicar dimensões padrão (600px largura, altura aumentada) ---
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=850)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=680)
         
         self.despesa_id = dados_despesa[0] if dados_despesa else None
         self.fornecedor_selecionado_id = None
@@ -132,33 +132,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         # Cabeçalho do Módulo
         tk.Label(main_frame, text=" 💸 Gerenciamento de Despesas (Saídas)", bg=self.bg_fundo, fg=self.cor_texto, font=("Segoe UI", 13, "bold")).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
-        # --- SEÇÃO BUSCA DE FORNECEDORES (Igual à Barra Principal) ---
-        search_frame = tk.LabelFrame(main_frame, text=" Pesquisa de Fornecedores ", bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 9, "bold"), padx=10, pady=5, relief="solid", borderwidth=1)
-        search_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 10))
-        search_frame.columnconfigure(0, weight=1)
-
-        self.placeholder_busca = "🔍 Digite o nome ou telefone do fornecedor para buscar..."
-        self.ent_busca_forn = tk.Entry(search_frame, font=("Segoe UI", 9), bg=self.bg_card, fg=self.cor_texto, relief="flat", highlightthickness=1, highlightbackground=self.cor_borda)
-        self.ent_busca_forn.grid(row=0, column=0, sticky="ew", ipady=4, padx=(0, 5))
-        self.ent_busca_forn.insert(0, self.placeholder_busca)
-        self.ent_busca_forn.config(fg="gray")
-        
-        self.ent_busca_forn.bind("<FocusIn>", lambda e: [self.ent_busca_forn.delete(0, tk.END), self.ent_busca_forn.config(fg=self.cor_texto)] if self.ent_busca_forn.get() == self.placeholder_busca else None)
-        self.ent_busca_forn.bind("<FocusOut>", lambda e: [self.ent_busca_forn.insert(0, self.placeholder_busca), self.ent_busca_forn.config(fg="gray")] if not self.ent_busca_forn.get().strip() else None)
-        self.ent_busca_forn.bind("<KeyRelease>", self.pesquisar_fornecedores)
-
-        # Treeview Mínima Dinâmica de Fornecedores (Exibe 3 Linhas)
-        self.tree_forn = ttk.Treeview(search_frame, columns=("id", "nome", "telefone", "status"), show="headings", height=3, style="Compacta.Treeview")
-        self.tree_forn.heading("id", text="ID"); self.tree_forn.heading("nome", text="NOME FORNECEDOR"); self.tree_forn.heading("telefone", text="TELEFONE"); self.tree_forn.heading("status", text="STATUS")
-        self.tree_forn.column("id", width=40, anchor="center"); self.tree_forn.column("nome", width=250, anchor="w")
-        self.tree_forn.column("telefone", width=120, anchor="center"); self.tree_forn.column("status", width=90, anchor="center")
-        self.tree_forn.grid(row=1, column=0, sticky="ew", pady=(5, 5))
-        self.tree_forn.bind("<<TreeviewSelect>>", self.selecionar_fornecedor)
-
-        # Painel Minimalista de Metadados do Contato Selecionado
-        self.lbl_detalhes_contato = tk.Label(search_frame, text="Nenhum fornecedor selecionado.", bg=self.bg_card, fg=self.cor_texto, font=("Segoe UI", 9, "italic"), relief="flat", anchor="w", justify="left", padx=10, pady=5)
-        self.lbl_detalhes_contato.grid(row=2, column=0, sticky="ew", pady=2)
-
+        # Buscar rapida retirada
         # --- FORMULÁRIO DE LANÇAMENTO ---
         form_frame = tk.LabelFrame(main_frame, text=" Dados da Despesa ", bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 9, "bold"), padx=10, pady=10, relief="solid", borderwidth=1)
         form_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
@@ -245,10 +219,10 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         # --- BOTÕES DE AÇÃO OPERACIONAL (Dual Mode e Hover) ---
         texto_btn = "ATUALIZAR DESPESA" if self.despesa_id else "SALVAR DESPESA"
         self.btn_salvar = tk.Button(main_frame, text=texto_btn, bg=self.cor_btn_acao, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.validar_e_salvar)
-        self.btn_salvar.grid(row=7, column=0, columnspan=3, pady=(10, 0), sticky="ew", ipady=4)
+        self.btn_salvar.grid(row=7, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
         
         self.btn_deletar = tk.Button(main_frame, text="EXCLUIR REGISTRO FINANCEIRO", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.excluir_crud)
-        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=2, sticky="ew", ipady=4)
+        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
         self.btn_deletar.grid_remove() # Exibir apenas em edições
 
         self.btn_cancelar = tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_btn_sair, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.destroy)

@@ -40,7 +40,7 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self._manter_em_primeiro_plano()
         
         # --- Aplicar dimensões padrão (600px largura, altura ajustada) ---
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=850)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=950)
 
         self.produto_id = dados_produto[0] if dados_produto else None
         self.fornecedor_id = None
@@ -156,17 +156,6 @@ class JanelaCadastroProdutos(tk.Toplevel):
 
         tk.Label(main_frame, text="FORNECEDOR (CADASTRO UNIFICADO)*", bg=self.bg_fundo, fg=self.cor_lbl,
                  font=("Segoe UI", 8, "bold")).grid(row=11, column=0, columnspan=2, sticky="w", pady=(3, 0))
-        self.ent_busca_forn = tk.Entry(main_frame, font=("Segoe UI", 9), bg=self.bg_card, relief="flat", highlightthickness=1, highlightbackground=self.cor_borda)
-        self.ent_busca_forn.grid(row=12, column=0, columnspan=2, sticky="ew", ipady=3)
-        self.ent_busca_forn.bind("<KeyRelease>", self.pesquisar_fornecedores_produto)
-        aplicar_estilo_foco(self.ent_busca_forn)
-        self.tree_forn = ttk.Treeview(main_frame, columns=("id", "nome"), show="headings", height=2, style="Busca.Treeview")
-        self.tree_forn.heading("id", text="ID"); self.tree_forn.heading("nome", text="FORNECEDOR")
-        self.tree_forn.column("id", width=40, anchor="center")
-        self.tree_forn.grid(row=13, column=0, columnspan=2, sticky="ew", pady=2)
-        self.tree_forn.bind("<<TreeviewSelect>>", self.selecionar_fornecedor_produto)
-        self.ent_forn = criar_campo(main_frame, "FORNECEDOR SELECIONADO", 14)
-        self.ent_forn.config(state="readonly")
 
         # --- Campo Data do Lançamento ---
         tk.Label(main_frame, text="DATA DO LANÇAMENTO", bg=self.bg_fundo, fg=self.cor_lbl, 
