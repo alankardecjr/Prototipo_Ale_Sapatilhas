@@ -36,6 +36,8 @@ class JanelaCadastroClientes(tk.Toplevel):
         self.cor_btn_menu   = paleta["cor_btn_menu"]
         self.cor_btn_sair   = paleta["cor_btn_sair"]
         self.cor_btn_acao   = paleta["cor_btn_acao"]
+        self.cor_btn_acao1  = paleta["cor_btn_acao1"]
+        self.cor_btn_acao2  = paleta["cor_btn_acao2"]
         self.cor_hover_btn  = paleta["cor_hover_btn"]
         self.cor_hover_field = paleta["cor_hover_field"]
         
@@ -46,13 +48,13 @@ class JanelaCadastroClientes(tk.Toplevel):
 
         self._manter_em_primeiro_plano()
         
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=720)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=660)
 
         self.cliente_id = dados_cliente[0] if dados_cliente else None
-        self.texto_btn = "ATUALIZAR CADASTRO" if self.cliente_id else "SALVAR CADASTRO"
-        self.cor_base_acao = self.cor_hover_field if self.cliente_id else self.cor_btn_acao
-        
+        self.cor_base_acao = self.cor_btn_acao1
+
         self.criar_widgets()
+        self._atualizar_botao_salvar()
         if dados_cliente:
             self.preencher_dados(dados_cliente)
         self.grab_set()
@@ -102,11 +104,20 @@ class JanelaCadastroClientes(tk.Toplevel):
         form.grid(row=1, column=0, columnspan=2, sticky="ew")
         form.columnconfigure((0, 1), weight=1)
 
-        tk.Label(form, text="TIPO DE CONTATO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=0, column=0, sticky="w", pady=(3, 0))
+        tk.Label(form, text="TIPO DE CONTATO*", bg=self.bg_fundo, fg=self.cor_lbl,
+                 font=("Segoe UI", 8, "bold")).grid(row=0, column=0, sticky="w", pady=(3, 0))
+        tk.Label(form, text="CLASSIFICAÇÃO", bg=self.bg_fundo, fg=self.cor_lbl,
+                 font=("Segoe UI", 8, "bold")).grid(row=0, column=1, sticky="w", pady=(3, 0))
         self.var_tipo = tk.StringVar(value="Cliente")
         self.opt_tipo = tk.OptionMenu(form, self.var_tipo, "Cliente", "Fornecedor")
         self.opt_tipo.config(bg=self.bg_card, fg=self.cor_texto, relief="flat", font=("Segoe UI", 10), cursor="hand2")
-        self.opt_tipo.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        self.opt_tipo.grid(row=1, column=0, sticky="ew", padx=(0, 5), pady=(0, 6))
+        self.var_status = tk.StringVar(value="Ativo")
+        self.opt_status = tk.OptionMenu(form, self.var_status, "Vip", "Ativo", "Inativo", "Bloqueado")
+        self.opt_status.config(bg=self.bg_card, fg=self.cor_texto, relief="flat",
+                               highlightthickness=1, highlightbackground=self.cor_borda,
+                               font=("Segoe UI", 10), cursor="hand2")
+        self.opt_status.grid(row=1, column=1, sticky="ew", pady=(0, 6))
 
         self.ent_nome   = self._criar_campo(form, "NOME COMPLETO*", 2)
         self.ent_cpf    = self._criar_campo(form, "CPF/ CNPJ (APENAS NÚMEROS)*", 4)
@@ -128,22 +139,33 @@ class JanelaCadastroClientes(tk.Toplevel):
 
         self.ent_obs = self._criar_campo(form, "OBSERVAÇÕES", 16)
 
-        tk.Label(form, text="CLASSIFICAÇÃO", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=18, column=0, sticky="w", pady=(8, 0))
-        self.var_status = tk.StringVar(value="Ativo")
-        self.opt_status = tk.OptionMenu(form, self.var_status, "Vip", "Ativo", "Inativo", "Bloqueado")
-        self.opt_status.config(bg=self.bg_card, fg=self.cor_texto, relief="flat", highlightthickness=1, highlightbackground=self.cor_borda, font=("Segoe UI", 10), cursor="hand2")
-        self.opt_status.grid(row=19, column=0, columnspan=2, sticky="ew", pady=(2, 4))
-
         _pal = ui_utils.get_paleta()
         frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
         frame_rodape.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-        frame_rodape.columnconfigure((0, 1, 2), weight=1)
-        self.btn_salvar = ui_utils.criar_botao_rodape(frame_rodape, self.texto_btn, self.cor_base_acao, self.salvar_dados, _pal)
+        frame_rodape.columnconfigure((0, 1, 2), weight=1, uniform="rodape_cli")
+        self.btn_salvar = ui_utils.criar_botao_rodape(
+            frame_rodape,
+            ui_utils.texto_botao_salvar("Contato", bool(self.cliente_id)),
+            self.salvar_dados,
+            "acao1",
+            _pal,
+        )
         self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
-        self.btn_gerar_venda = ui_utils.criar_botao_rodape(frame_rodape, "🛒 GERAR VENDA", self.cor_destaque, self.gerar_venda, _pal)
+        self.btn_gerar_venda = ui_utils.criar_botao_rodape(
+            frame_rodape, "Lançar Venda", self.gerar_venda, "acao2", _pal,
+        )
         self.btn_gerar_venda.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
-        self.btn_cancelar = ui_utils.criar_botao_rodape(frame_rodape, "FECHAR", self.cor_btn_sair, self._fechar, _pal)
+        self.btn_cancelar = ui_utils.criar_botao_rodape(
+            frame_rodape, "Fechar Janela", self._fechar, "sair", _pal,
+        )
         self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
+
+    def _atualizar_botao_salvar(self):
+        em_edicao = bool(self.cliente_id)
+        self.btn_salvar.config(text=ui_utils.texto_botao_salvar("Contato", em_edicao))
+        ui_utils.atualizar_cor_botao_rodape(
+            self.btn_salvar, "acao2" if em_edicao else "acao1", ui_utils.get_paleta(),
+        )
 
     def _fechar(self):
         if ui_utils.confirmar(self, "Fechar", "Deseja fechar sem salvar?"):
@@ -266,6 +288,7 @@ class JanelaCadastroClientes(tk.Toplevel):
         self.ent_limite.delete(0, "end")
         self.ent_limite.insert(0, f"{float(d[13] or 0):.2f}" if len(d) > 13 else "0.00")
         self.var_status.set(d[15] if len(d) > 15 else "Ativo")
+        self._atualizar_botao_salvar()
 
 if __name__ == "__main__":
     root = tk.Tk()

@@ -45,7 +45,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.resizable(False, False)
         
         # --- Aplicar dimensões padrão (600px largura, altura aumentada) ---
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=680)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=660)
         
         self.despesa_id = dados_despesa[0] if dados_despesa else None
         self.fornecedor_selecionado_id = None
@@ -102,20 +102,8 @@ class JanelaGerenciarDespesas(tk.Toplevel):
             messagebox.showwarning("Aviso", f"Não foi possível manter esta janela em primeiro plano: {e}", parent=self)
 
     def criar_widgets(self):
-        wrapper = tk.Frame(self, bg=self.bg_fundo)
-        wrapper.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(wrapper, bg=self.bg_fundo, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(wrapper, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        main_frame = tk.Frame(canvas, bg=self.bg_fundo, padx=15, pady=10)
-        self.canvas_frame = canvas.create_window((0, 0), window=main_frame, anchor="nw")
-
-        main_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(self.canvas_frame, width=e.width))
+        main_frame = tk.Frame(self, bg=self.bg_fundo, padx=15, pady=10)
+        main_frame.pack(fill="both", expand=True)
 
         main_frame.columnconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
@@ -160,10 +148,12 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.ent_encargos = criar_campo_form("ENCARGOS / JUROS (R$)", 2, 1)
         self.ent_encargos.insert(0, "0.00")
         self.ent_encargos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
-        
+        ui_utils.anexar_botao_calculadora(form_frame, self.ent_encargos, row=3, column=1, sticky="e")
+
         self.ent_descontos = criar_campo_form("DESCONTOS (R$)", 2, 2)
         self.ent_descontos.insert(0, "0.00")
         self.ent_descontos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
+        ui_utils.anexar_botao_calculadora(form_frame, self.ent_descontos, row=3, column=2, sticky="e")
 
         self.ent_valor_pago = criar_campo_form("VALOR PAGO (PARCIAL/TOTAL)", 4, 0)
         self.ent_valor_pago.insert(0, "0.00")
@@ -224,26 +214,27 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.tree_parcelas.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5)
         self.tree_parcelas.bind("<<TreeviewSelect>>", self.carregar_parcela_selecionada)
 
-        texto_btn = "ATUALIZAR DESPESA" if self.despesa_id else "SALVAR DESPESA"
         _pal = ui_utils.get_paleta()
         frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
         frame_rodape.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        frame_rodape.columnconfigure((0, 1, 2), weight=1)
+        frame_rodape.columnconfigure((0, 1, 2), weight=1, uniform="rodape_desp")
         self.btn_salvar = ui_utils.criar_botao_rodape(
-            frame_rodape, texto_btn, self.cor_btn_acao, self.validar_e_salvar, _pal
+            frame_rodape,
+            ui_utils.texto_botao_salvar("Despesas", bool(self.despesa_id)),
+            self.validar_e_salvar,
+            "acao1",
+            _pal,
         )
         self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
         self.btn_deletar = ui_utils.criar_botao_rodape(
-            frame_rodape, "EXCLUIR", self.cor_destaque, self.excluir_crud, _pal
+            frame_rodape, "Estornar Despesas", self.excluir_crud, "acao2", _pal,
         )
+        self.btn_deletar.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+        self.btn_deletar.config(state="normal" if self.despesa_id else "disabled")
         self.btn_cancelar = ui_utils.criar_botao_rodape(
-            frame_rodape, "FECHAR", self.cor_btn_sair, self.destroy, _pal
+            frame_rodape, "Fechar Janela", self.destroy, "sair", _pal,
         )
-        if self.despesa_id:
-            self.btn_deletar.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
-            self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
-        else:
-            self.btn_cancelar.grid(row=0, column=1, sticky="ew", padx=(4, 0), ipady=6)
+        self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
 
     # --- LÓGICA ---
     def toggle_recorrencia(self, event=None):
@@ -361,8 +352,9 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.ent_parc.delete(0, tk.END); self.ent_parc.insert(0, str(d[14] or 1))
         self.toggle_recorrencia()
         
-        self.btn_salvar.config(text="⚙️ CONFIRMAR ATUALIZAÇÃO (SALVAR)", bg=self.cor_destaque)
-        self.btn_deletar.grid()
+        self.btn_deletar.config(state="normal")
+        self.btn_salvar.config(text=ui_utils.texto_botao_salvar("Despesas", True))
+        ui_utils.atualizar_cor_botao_rodape(self.btn_salvar, "acao2", ui_utils.get_paleta())
         self.carregar_parcelas_historico(d[5], d[6])
 
     def validar_e_salvar(self):

@@ -46,7 +46,7 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.configure(bg=self.bg_fundo)
         self.resizable(False, False)
         
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=680)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=660)
         
         self.receita_id = dados_receita[0] if dados_receita else None
         self.cliente_selecionado_id = None
@@ -107,20 +107,8 @@ class JanelaGerenciarReceitas(tk.Toplevel):
             messagebox.showwarning("Aviso", f"Não foi possível manter esta janela em primeiro plano: {e}", parent=self)
 
     def criar_widgets(self):
-        wrapper = tk.Frame(self, bg=self.bg_fundo)
-        wrapper.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(wrapper, bg=self.bg_fundo, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(wrapper, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        main_frame = tk.Frame(canvas, bg=self.bg_fundo, padx=15, pady=10)
-        self.canvas_frame = canvas.create_window((0, 0), window=main_frame, anchor="nw")
-
-        main_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(self.canvas_frame, width=e.width))
+        main_frame = tk.Frame(self, bg=self.bg_fundo, padx=15, pady=10)
+        main_frame.pack(fill="both", expand=True)
 
         main_frame.columnconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
@@ -166,10 +154,12 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.ent_encargos = criar_campo_form("JUROS / MULTA (R$)", 2, 1)
         self.ent_encargos.insert(0, "0.00")
         self.ent_encargos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
-        
+        ui_utils.anexar_botao_calculadora(form_frame, self.ent_encargos, row=3, column=1, sticky="e")
+
         self.ent_descontos = criar_campo_form("DESCONTO CONCEDIDO (R$)", 2, 2)
         self.ent_descontos.insert(0, "0.00")
         self.ent_descontos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
+        ui_utils.anexar_botao_calculadora(form_frame, self.ent_descontos, row=3, column=2, sticky="e")
 
         self.ent_valor_pago = criar_campo_form("AMORTIZAÇÃO / VALOR AMORTIZADO", 4, 0)
         self.ent_valor_pago.insert(0, "0.00")
@@ -229,26 +219,29 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.tree_parcelas.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5)
         self.tree_parcelas.bind("<<TreeviewSelect>>", self.carregar_parcela_selecionada)
 
-        # --- BOTÕES DE AÇÃO OPERACIONAL (Dual Mode e Hover) ---
-        texto_btn = "ATUALIZAR RECEITA" if self.receita_id else "SALVAR RECEITA"
-        self.btn_salvar = tk.Button(main_frame, text=texto_btn, bg=self.cor_btn_acao, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.validar_e_salvar)
-        self.btn_deletar = tk.Button(main_frame, text="ESTORNAR / DELETAR TITULO", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.excluir_crud)
-        self.btn_deletar.grid_remove()
-        self.btn_cancelar = tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_btn_sair, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.destroy)
-        self._posicionar_botoes_rodape()
+        _pal = ui_utils.get_paleta()
+        frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
+        frame_rodape.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        frame_rodape.columnconfigure((0, 1, 2), weight=1, uniform="rodape_rec")
+        self.btn_salvar = ui_utils.criar_botao_rodape(
+            frame_rodape,
+            ui_utils.texto_botao_salvar("Receita", bool(self.receita_id)),
+            self.validar_e_salvar,
+            "acao1",
+            _pal,
+        )
+        self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
+        self.btn_deletar = ui_utils.criar_botao_rodape(
+            frame_rodape, "Estornar Receita", self.excluir_crud, "acao2", _pal,
+        )
+        self.btn_deletar.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+        self.btn_deletar.config(state="normal" if self.receita_id else "disabled")
+        self.btn_cancelar = ui_utils.criar_botao_rodape(
+            frame_rodape, "Fechar Janela", self.destroy, "sair", _pal,
+        )
+        self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
 
-       # Bind Hovers
-        self.btn_salvar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
-        self.btn_salvar.bind("<Leave>", lambda e: e.widget.config(bg=self.cor_btn_acao))
-        self.btn_cancelar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
-        self.btn_cancelar.bind("<Leave>", lambda e: e.widget.config(bg=self.cor_btn_sair))
-    
     # --- LÓGICA ---
-    def _posicionar_botoes_rodape(self):
-        """Ações fixas logo abaixo do histórico de parcelas."""
-        self.btn_salvar.grid(row=5, column=0, columnspan=3, pady=(8, 2), sticky="ew", ipady=4)
-        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=2, sticky="ew", ipady=4)
-        self.btn_cancelar.grid(row=7, column=0, columnspan=3, pady=(2, 5), sticky="ew", ipady=4)
 
     def toggle_recorrencia(self, event=None):
         if self.cb_recorrencia.get() == "Parcelado":
@@ -386,8 +379,9 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.ent_parc.delete(0, tk.END); self.ent_parc.insert(0, str(d[14] or 1))
         self.toggle_recorrencia()
         
-        self.btn_salvar.config(text="⚙️ ATUALIZAR PARCELA / RECEBIMENTO", bg=self.cor_destaque)
-        self.btn_deletar.grid()
+        self.btn_deletar.config(state="normal")
+        self.btn_salvar.config(text=ui_utils.texto_botao_salvar("Receita", True))
+        ui_utils.atualizar_cor_botao_rodape(self.btn_salvar, "acao2", ui_utils.get_paleta())
         if self.venda_id:
             self.carregar_parcelas_por_venda(self.venda_id)
         else:

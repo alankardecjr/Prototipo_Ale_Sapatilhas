@@ -113,18 +113,20 @@ class JanelaCadastroProdutos(tk.Toplevel):
             ent.bind("<FocusIn>", on_focus_in)
             ent.bind("<FocusOut>", on_focus_out)
 
-        def criar_campo(parent, texto, row, col=0, colspan=2):
-            tk.Label(parent, text=texto, bg=self.bg_fundo, fg=self.cor_lbl, 
-                     font=("Segoe UI", 8, "bold")).grid(row=row, column=col, sticky="w", pady=(3, 0))
+        def criar_campo(parent, texto, row, col=0, colspan=2, bg_label=None):
+            bg_lbl = bg_label or self.bg_fundo
+            tk.Label(parent, text=texto, bg=bg_lbl, fg=self.cor_lbl,
+                     font=("Segoe UI", 8, "bold")).grid(row=row, column=col, columnspan=colspan, sticky="w", pady=(3, 0))
             ent = tk.Entry(parent, font=("Segoe UI", 10), bg=self.bg_card, fg=self.cor_texto,
                             relief="flat", highlightbackground=self.cor_borda, highlightthickness=1)
-            ent.grid(row=row+1, column=col, columnspan=colspan, sticky="ew", ipady=3, padx=(0, 5) if colspan==1 else 0)
+            ent.grid(row=row+1, column=col, columnspan=colspan, sticky="ew", ipady=3)
             aplicar_estilo_foco(ent)
             return ent
 
         def criar_combo(parent, texto, lista, row, col, span=1):
-            tk.Label(parent, text=texto, bg=self.bg_fundo, fg=self.cor_lbl, 
-                     font=("Segoe UI", 8, "bold")).grid(row=row, column=col, sticky="w", pady=(3, 0))
+            bg_lbl = parent.cget("bg")
+            tk.Label(parent, text=texto, bg=bg_lbl, fg=self.cor_lbl,
+                     font=("Segoe UI", 8, "bold")).grid(row=row, column=col, columnspan=span, sticky="w", pady=(3, 0))
             combo = ttk.Combobox(parent, values=lista, font=("Segoe UI", 10), state="readonly")
             combo.set(lista[0])
             combo.grid(row=row+1, column=col, columnspan=span, sticky="ew", padx=(0, 5) if col==0 else 0)
@@ -215,13 +217,18 @@ class JanelaCadastroProdutos(tk.Toplevel):
         frame_grade.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         frame_grade.columnconfigure(0, weight=1)
 
-        self.cb_cor = criar_combo(frame_grade, "COR*", self.list_cores, 0, 0, 2)
-        self.cb_tam = criar_combo(frame_grade, "TAMANHO*", self.list_tamanhos, 2, 0, 2)
+        self.cb_cor = criar_combo(frame_grade, "COR*", self.list_cores, 0, 0, 1)
+        self.cb_tam = criar_combo(frame_grade, "TAMANHO*", self.list_tamanhos, 2, 0, 1)
         self.cb_cor.bind("<<ComboboxSelected>>", lambda e: self._atualizar_sku_preview())
         self.cb_tam.bind("<<ComboboxSelected>>", lambda e: self._atualizar_sku_preview())
-        self.ent_qtd = criar_campo(frame_grade, "QUANTIDADE*", 4, col=0, colspan=1)
-        self.lbl_qtd_atual = tk.Label(frame_grade, text="", bg=self.bg_card, fg=self.cor_lbl, font=("Segoe UI", 8), anchor="w")
-        self.lbl_qtd_atual.grid(row=6, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        self.ent_qtd = criar_campo(frame_grade, "QUANTIDADE*", 4, col=0, colspan=1, bg_label=self.bg_card)
+        ui_utils.configurar_entry_inteiro(self.ent_qtd, self)
+        self.ent_qtd.insert(0, "1")
+        self.lbl_qtd_atual = tk.Label(
+            frame_grade, text="Quantidade a lançar no estoque (entrada)",
+            bg=self.bg_card, fg=self.cor_lbl, font=("Segoe UI", 8), anchor="w",
+        )
+        self.lbl_qtd_atual.grid(row=6, column=0, sticky="ew", pady=(2, 0))
 
         # --- ESPAÇO PARA FOTO (lado direito) ---
         frame_foto = tk.LabelFrame(frame_conteudo, bg=self.bg_card, relief="groove", borderwidth=1, padx=10, pady=10, text="Foto")
@@ -243,25 +250,27 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self.ent_sku.grid(row=19, column=0, columnspan=2, sticky="ew", ipady=3, pady=(0, 10))
         
         # --- BOTÕES no rodapé (uma linha) ---
-        texto_botao = "ATUALIZAR PRODUTO" if self.produto_id else "SALVAR PRODUTO"
-        cor_base_acao = self.cor_hover_field if self.produto_id else self.cor_btn_acao
         frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
         frame_rodape.grid(row=20, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        frame_rodape.columnconfigure((0, 1, 2), weight=1)
+        frame_rodape.columnconfigure((0, 1, 2), weight=1, uniform="rodape_prod")
 
         _pal = ui_utils.get_paleta()
         self.btn_salvar = ui_utils.criar_botao_rodape(
-            frame_rodape, texto_botao, cor_base_acao, lambda: self.validar_e_salvar(continuar=False), _pal
+            frame_rodape,
+            ui_utils.texto_botao_salvar("Produto", bool(self.produto_id)),
+            lambda: self.validar_e_salvar(continuar=False),
+            "acao1",
+            _pal,
         )
         self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
         self.btn_continuar = ui_utils.criar_botao_rodape(
-            frame_rodape, "SALVAR E CONTINUAR", self.cor_destaque,
-            lambda: self.validar_e_salvar(continuar=True), _pal,
+            frame_rodape, "Continuar Lançando",
+            lambda: self.validar_e_salvar(continuar=True), "acao2", _pal,
         )
         self.btn_continuar.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
         self.btn_cancelar = ui_utils.criar_botao_rodape(
-            frame_rodape, "FECHAR", self.cor_btn_sair,
-            lambda: self._fechar_com_confirmacao(), _pal,
+            frame_rodape, "Fechar Janela",
+            lambda: self._fechar_com_confirmacao(), "sair", _pal,
         )
         self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
 
@@ -461,6 +470,8 @@ class JanelaCadastroProdutos(tk.Toplevel):
                 self._preparar_nova_variacao(d)
             else:
                 self.destroy()
+        except ValueError:
+            messagebox.showwarning("Atenção", "Quantidade deve conter apenas números inteiros.", parent=self)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao salvar: {e}", parent=self)
 
@@ -469,11 +480,11 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self.produto_id = None
         self._dados_base_edicao = None
         self.ent_qtd.delete(0, tk.END)
-        self.ent_qtd.insert(0, "")
+        self.ent_qtd.insert(0, "1")
         self.lbl_qtd_atual.config(text="Informe a quantidade da nova variação")
+        self.btn_salvar.config(text=ui_utils.texto_botao_salvar("Produto", False))
+        ui_utils.atualizar_cor_botao_rodape(self.btn_salvar, "acao1", ui_utils.get_paleta())
         self._atualizar_sku_preview()
-        self.btn_salvar.config(text="SALVAR PRODUTO", bg=self.cor_btn_acao)
-        self.btn_continuar.config(bg=self.cor_destaque)
 
     def preencher_dados(self, d):
         """d = SELECT * FROM produtos."""
@@ -497,6 +508,8 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self.ent_qtd.delete(0, tk.END)
         self.ent_qtd.insert(0, "0")
         self.lbl_qtd_atual.config(text=f"Quantidade atual em estoque: {quantidade_atual}")
+        self.btn_salvar.config(text=ui_utils.texto_botao_salvar("Produto", True))
+        ui_utils.atualizar_cor_botao_rodape(self.btn_salvar, "acao2", ui_utils.get_paleta())
         self.cb_cat.set(d[9] if d[9] in self.list_categorias else self.list_categorias[0])
         self.cb_mat.set(d[10] if d[10] in self.list_materiais else self.list_materiais[0])
         self.ent_forn.delete(0, tk.END)
@@ -505,7 +518,6 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self.caminho_foto = d[13] if len(d) > 13 else ""
         if self.caminho_foto:
             self.exibir_foto_preview()
-        self.btn_salvar.config(text="ATUALIZAR PRODUTO", bg=self.cor_hover_field)
 
     def exibir_foto_preview(self):
         """Carrega e exibe a foto do produto no Label"""

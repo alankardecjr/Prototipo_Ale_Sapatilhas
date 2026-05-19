@@ -370,7 +370,8 @@ class SistemaAleSapatilhas:
         if tipo_utilidade == "Calculadora":
             ui_utils.abrir_calculadora(self.root)
         elif tipo_utilidade == "Calendário":
-            ui_utils.abrir_calendario_info(self.root)
+            ref = tk.Entry(self.root)
+            ui_utils.MiniCalendario(self.root, ref, titulo="Calendário")
         elif tipo_utilidade == "Anotações":
             ui_utils.abrir_anotacoes(self.root)
         elif tipo_utilidade == "Configurações":

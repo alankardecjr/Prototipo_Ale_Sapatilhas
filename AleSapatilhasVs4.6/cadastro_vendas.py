@@ -34,7 +34,6 @@ class JanelaCadastroVendas(tk.Toplevel):
         self.grab_set()
         self.focus_set()
 
-        ui_utils.calcular_dimensoes_janela(self, maximizar=True)
         paleta = ui_utils.get_paleta()
         self.bg_fundo = paleta["bg_fundo"]
         self.bg_card = paleta["bg_card"]
@@ -54,6 +53,10 @@ class JanelaCadastroVendas(tk.Toplevel):
 
         self.configurar_estilos()
         self.setup_layout()
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            ui_utils.calcular_dimensoes_janela(self, maximizar=True)
 
         if cliente_selecionado:
             cid = cliente_selecionado[0] if isinstance(cliente_selecionado, (tuple, list)) else cliente_selecionado
@@ -82,7 +85,7 @@ class JanelaCadastroVendas(tk.Toplevel):
         self.style = ttk.Style()
         self.style.theme_use("clam")
         self.style.configure("PDV.Treeview", background=self.bg_card, foreground=self.cor_texto,
-                             rowheight=42, font=("Segoe UI", 10))
+                             rowheight=36, font=("Segoe UI", 10))
         self.style.configure("PDV.Treeview.Heading", font=("Segoe UI", 10, "bold"), background=self.bg_card)
         self.style.map("PDV.Treeview", background=[("selected", self.cor_destaque)])
 
@@ -124,27 +127,35 @@ class JanelaCadastroVendas(tk.Toplevel):
                 self.btn_finalizar = btn
                 self.btn_finalizar.config(state="disabled")
 
-        self.main_container = tk.Frame(self, bg=self.bg_fundo, padx=20, pady=10)
-        self.main_container.pack(side="right", fill="both", expand=True)
+        self.main_container = tk.Frame(self, bg=self.bg_fundo)
+        self.main_container.pack(side="right", fill="both", expand=True, padx=16, pady=10)
+        self.main_container.grid_rowconfigure(2, weight=1)
+        self.main_container.grid_columnconfigure(0, weight=1)
 
         self.lbl_modo = tk.Label(
             self.main_container,
             text="EDIÇÃO DE VENDA" if self.venda_id else "NOVA VENDA (PDV)",
             font=("Segoe UI", 12, "bold"), bg=self.bg_fundo, fg=self.cor_destaque,
         )
-        self.lbl_modo.pack(anchor="w", pady=(0, 5))
+        self.lbl_modo.grid(row=0, column=0, sticky="w", pady=(0, 4))
 
         self.setup_sessao_cliente()
+
         self.colunas_frame = tk.Frame(self.main_container, bg=self.bg_fundo)
-        self.colunas_frame.pack(fill="both", expand=True, pady=10)
+        self.colunas_frame.grid(row=2, column=0, sticky="nsew", pady=4)
+        self.colunas_frame.grid_rowconfigure(0, weight=1)
+        self.colunas_frame.grid_columnconfigure(0, weight=1)
+        self.colunas_frame.grid_columnconfigure(1, weight=1)
         self.setup_sessao_produtos(self.colunas_frame)
         self.setup_sessao_carrinho(self.colunas_frame)
+
         self._setup_pagamento()
 
     def _setup_pagamento(self):
         f = tk.LabelFrame(self.main_container, text=" Pagamento ", bg=self.bg_fundo,
                           fg=self.cor_texto, font=("Segoe UI", 9, "bold"), relief="solid", borderwidth=1)
-        f.pack(fill="x", side="bottom", pady=(5, 0))
+        f.grid(row=3, column=0, sticky="ew", pady=(6, 4))
+        self.frame_pagamento = f
         for c in range(6):
             f.columnconfigure(c, weight=1)
 
@@ -181,7 +192,7 @@ class JanelaCadastroVendas(tk.Toplevel):
 
     def setup_sessao_cliente(self):
         frame_cli = tk.Frame(self.main_container, bg=self.bg_fundo)
-        frame_cli.pack(fill="x", pady=5)
+        frame_cli.grid(row=1, column=0, sticky="ew", pady=4)
 
         f_busca = tk.Frame(frame_cli, bg=self.bg_fundo)
         f_busca.pack(side="left", fill="y")
@@ -212,7 +223,7 @@ class JanelaCadastroVendas(tk.Toplevel):
     def setup_sessao_produtos(self, parent):
         f_prod = tk.LabelFrame(parent, text=" 👠 LISTA DE PRODUTOS ", bg=self.bg_fundo,
                                fg=self.cor_texto, font=("Segoe UI", 10, "bold"), relief="solid", borderwidth=1)
-        f_prod.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        f_prod.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
 
         barra_busca = tk.Frame(f_prod, bg=self.bg_fundo)
         barra_busca.pack(fill="x", padx=5, pady=5)
@@ -239,7 +250,7 @@ class JanelaCadastroVendas(tk.Toplevel):
         self.cb_filtro_tam.bind("<<ComboboxSelected>>", lambda e: self.filtrar_produtos())
 
         cols = ("prod", "cor", "tam", "preco", "qtd")
-        self.tree_estoque = ttk.Treeview(f_prod, columns=cols, show="tree headings", style="PDV.Treeview", height=10)
+        self.tree_estoque = ttk.Treeview(f_prod, columns=cols, show="tree headings", style="PDV.Treeview", height=6)
         self.tree_estoque.heading("#0", text="FOTO")
         self.tree_estoque.column("#0", width=52, anchor="center")
         for col in cols:
@@ -254,7 +265,7 @@ class JanelaCadastroVendas(tk.Toplevel):
         f_cart.pack(side="right", fill="both", expand=True)
 
         cols = ("prod", "tam", "qtd", "sub")
-        self.tree_cart = ttk.Treeview(f_cart, columns=cols, show="tree headings", style="PDV.Treeview", height=10)
+        self.tree_cart = ttk.Treeview(f_cart, columns=cols, show="tree headings", style="PDV.Treeview", height=8)
         self.tree_cart.heading("#0", text="FOTO")
         self.tree_cart.column("#0", width=52, anchor="center")
         for col in cols:
