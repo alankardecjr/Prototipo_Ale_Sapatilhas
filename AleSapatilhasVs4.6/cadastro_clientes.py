@@ -211,7 +211,7 @@ class JanelaCadastroClientes(tk.Toplevel):
                     'nome': d['nome'], 'cpf': d['cpf'], 'telefone': d['tel'], 'email': d['email'],
                     'aniversario': d['niver'], 'tamanho_calcado': d['tam'], 'endereco_completo': d['endereco'],
                     'bairro': d['bairro'], 'cidade': d['cidade'], 'cep': d['cep'], 'observacao': d['obs'],
-                    'limite_credito': d['limite'], 'status_cliente': d['status']
+                    'limite_credito': d['limite'], 'status_cliente': d['status'], 'tipo': d['tipo'],
                 }
                 database.atualizar_cliente(self.cliente_id, **dados_atualizacao)
                 cid = self.cliente_id

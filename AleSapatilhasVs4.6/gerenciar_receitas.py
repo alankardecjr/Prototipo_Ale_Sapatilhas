@@ -223,14 +223,10 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         # --- BOTÕES DE AÇÃO OPERACIONAL (Dual Mode e Hover) ---
         texto_btn = "ATUALIZAR RECEITA" if self.receita_id else "SALVAR RECEITA"
         self.btn_salvar = tk.Button(main_frame, text=texto_btn, bg=self.cor_btn_acao, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.validar_e_salvar)
-        self.btn_salvar.grid(row=7, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
-        
         self.btn_deletar = tk.Button(main_frame, text="ESTORNAR / DELETAR TITULO", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.excluir_crud)
-        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
         self.btn_deletar.grid_remove()
-
         self.btn_cancelar = tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_btn_sair, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.destroy)
-        self.btn_cancelar.grid(row=20, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
+        self._posicionar_botoes_rodape()
 
        # Bind Hovers
         self.btn_salvar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
@@ -239,6 +235,12 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.btn_cancelar.bind("<Leave>", lambda e: e.widget.config(bg=self.cor_btn_sair))
     
     # --- LÓGICA ---
+    def _posicionar_botoes_rodape(self):
+        """Ações fixas logo abaixo do histórico de parcelas."""
+        self.btn_salvar.grid(row=5, column=0, columnspan=3, pady=(8, 2), sticky="ew", ipady=4)
+        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=2, sticky="ew", ipady=4)
+        self.btn_cancelar.grid(row=7, column=0, columnspan=3, pady=(2, 5), sticky="ew", ipady=4)
+
     def toggle_recorrencia(self, event=None):
         if self.cb_recorrencia.get() == "Parcelado":
             self.lbl_parc.grid(row=8, column=2, sticky="w", padx=5)
@@ -430,16 +432,13 @@ class JanelaGerenciarReceitas(tk.Toplevel):
                 conn.commit()
                 messagebox.showinfo("Sucesso", "Título de Receita modificado.", parent=self)
             else:
-                # Inclusão Manual/Avulsa
-                for i in range(parcelas_totais):
-                    venc_calculado = database.adicionar_meses(datetime.strptime(dat_ven, "%Y-%m-%d"), i).strftime("%Y-%m-%d")
-                    v_parc_liquido = round(valor_liquido_calculado / parcelas_totais, 2)
-                    cursor.execute("""
-                        INSERT INTO financeiro (tipo, entidade_nome, descricao, valor, valor_base, valor_pago, encargos, descontos, forma_pagamento, recorrencia, total_parcelas, parcelas_atual, data_vencimento, data_pagamento, categoria, status, data_lancamento)
-                        VALUES ('Receita', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (nome, f"{desc} ({i+1}/{parcelas_totais})", v_parc_liquido, val_base_f, val_pago_f if i==0 else 0.0, enc_f, desc_f, self.cb_forma.get(), self.cb_recorrencia.get(), parcelas_totais, i+1, venc_calculado, dat_pag if i==0 else None, self.cb_cat.get(), self.cb_status.get() if i==0 else 'Pendente', dat_lan))
-                conn.commit()
-                messagebox.showinfo("Sucesso", "Fluxo de contas a receber criado.", parent=self)
+                messagebox.showwarning(
+                    "Receitas",
+                    "Novas receitas são geradas apenas pelo PDV (Gerar Vendas).\n"
+                    "Use esta tela para registrar pagamentos de títulos existentes.",
+                    parent=self,
+                )
+                return
 
         if hasattr(self.master, "exibir_financeiro"): self.master.exibir_financeiro()
         self.destroy()

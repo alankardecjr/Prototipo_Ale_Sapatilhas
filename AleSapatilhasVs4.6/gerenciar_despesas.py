@@ -219,14 +219,10 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         # --- BOTÕES DE AÇÃO OPERACIONAL (Dual Mode e Hover) ---
         texto_btn = "ATUALIZAR DESPESA" if self.despesa_id else "SALVAR DESPESA"
         self.btn_salvar = tk.Button(main_frame, text=texto_btn, bg=self.cor_btn_acao, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.validar_e_salvar)
-        self.btn_salvar.grid(row=7, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
-        
         self.btn_deletar = tk.Button(main_frame, text="EXCLUIR REGISTRO FINANCEIRO", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.excluir_crud)
-        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
-        self.btn_deletar.grid_remove() # Exibir apenas em edições
-
+        self.btn_deletar.grid_remove()
         self.btn_cancelar = tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_btn_sair, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.destroy)
-        self.btn_cancelar.grid(row=20, column=0, columnspan=3, pady=(5, 0), sticky="ew", ipady=4)
+        self._posicionar_botoes_rodape()
       
        # Bind Hovers
         self.btn_salvar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
@@ -235,6 +231,12 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.btn_cancelar.bind("<Leave>", lambda e: e.widget.config(bg=self.cor_btn_sair))
 
     # --- LÓGICA ---
+    def _posicionar_botoes_rodape(self):
+        """Ações fixas logo abaixo do histórico de parcelas."""
+        self.btn_salvar.grid(row=5, column=0, columnspan=3, pady=(8, 2), sticky="ew", ipady=4)
+        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=2, sticky="ew", ipady=4)
+        self.btn_cancelar.grid(row=7, column=0, columnspan=3, pady=(2, 5), sticky="ew", ipady=4)
+
     def toggle_recorrencia(self, event=None):
         if self.cb_recorrencia.get() == "Parcelar":
             self.lbl_parc.grid(row=8, column=2, sticky="w", padx=5)

@@ -10,7 +10,7 @@ Para estudar o fluxo, comece por __main__ → SistemaAleSapatilhas → setup_ui.
 """
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, simpledialog
 from datetime import datetime
 
 import config
@@ -52,6 +52,8 @@ class SistemaAleSapatilhas:
         self.botoes_menu = {}
         self.botoes_por_texto = {}
         self.botao_menu_ativo = None
+        self._cache_lista = []  # (iid, valores) para filtros/ordenação sem novo SELECT
+        self._filtros_ativos = {}
         
         self.setup_ui()
         self.botao_menu_ativo = self.botoes_por_texto.get("📑 GERENCIAR VENDAS")
@@ -210,7 +212,11 @@ class SistemaAleSapatilhas:
         btn_filtrar.bind("<Enter>", lambda e: btn_filtrar.config(bg=self.cor_hover_btn))
         btn_filtrar.bind("<Leave>", lambda e: btn_filtrar.config(bg=self.cor_btn_menu))
 
-        # --- Botão 2: Limpar ---
+        btn_limpar = tk.Button(search_frame, text="❌ LIMPAR", command=self.limpar_busca_e_filtros, **btn_estilo)
+        btn_limpar.pack(side="left", padx=2)
+        btn_limpar.bind("<Enter>", lambda e: btn_limpar.config(bg=self.cor_hover_btn))
+        btn_limpar.bind("<Leave>", lambda e: btn_limpar.config(bg=self.cor_btn_menu))
+
         btn_utilidades = tk.Menubutton(search_frame, text="➕ UTILIDADES", **btn_estilo)
         menu_utilidades = tk.Menu(btn_utilidades, tearoff=0, bg=self.bg_card, fg=self.cor_texto, font=("Segoe UI", 9))
         menu_utilidades.add_command(label="Calculadora", command=lambda: self.aplicar_utilidades("Calculadora"))
@@ -234,10 +240,121 @@ class SistemaAleSapatilhas:
             self.ent_busca.insert(0, self.placeholder_busca)
             self.ent_busca.config(fg="gray")
 
+    def _atualizar_cache_lista(self):
+        """Guarda snapshot da Treeview para filtrar sem consultar o banco de novo."""
+        self._cache_lista = [(iid, self.tree.item(iid, "values")) for iid in self.tree.get_children()]
+
+    def _renderizar_cache(self, linhas):
+        self.tree.delete(*self.tree.get_children())
+        for iid, valores in linhas:
+            self.tree.insert("", "end", iid=iid, values=valores)
+
+    def _indice_coluna_filtro(self):
+        """Retorna índices de colunas (valores) conforme o modo da lista."""
+        mapa = {
+            "clientes": {"tipo": 0, "status": 7, "data": 4},
+            "produtos": {"status": 8},
+            "vendas": {"status": 4, "data": 3},
+            "financeiro": {"tipo": 0, "status": 9, "data": 4},
+            "contas_receber": {"status": 6, "data": 5},
+            "contas_pagar": {"status": 6, "data": 5},
+        }
+        return mapa.get(self.modo_atual, {})
+
     def aplicar_filtro_avancado(self, tipo_filtro):
-        """Garante o gancho para aplicar inteligência de filtros baseada no modo ativo."""
-        # Aqui podemos interceptar qual botão foi clicado para abrir sub-caixas ou ordenar a Treeview
-        messagebox.showinfo("Filtros", f"Filtro por '{tipo_filtro}' acionado.")
+        """Filtra ou ordena a lista atual conforme o modo exibido."""
+        if self.modo_atual == "dashboard":
+            messagebox.showinfo("Filtros", "Abra uma lista (vendas, contatos, fluxo…) para usar filtros.", parent=self.root)
+            return
+        if not self._cache_lista:
+            self._atualizar_cache_lista()
+        if not self._cache_lista:
+            return
+
+        cols = self._indice_coluna_filtro()
+
+        if tipo_filtro == "Tipo":
+            if "tipo" not in cols:
+                messagebox.showinfo("Filtro Tipo", "Esta lista não possui coluna de tipo.", parent=self.root)
+                return
+            opcoes = sorted({str(v[cols["tipo"]]) for _, v in self._cache_lista if v[cols["tipo"]]})
+            escolha = simpledialog.askstring(
+                "Filtrar por tipo",
+                f"Tipos disponíveis:\n{', '.join(opcoes)}\n\nDigite o tipo:",
+                parent=self.root,
+            )
+            if not escolha:
+                return
+            termo = escolha.strip().lower()
+            filtrado = [(iid, v) for iid, v in self._cache_lista if termo in str(v[cols["tipo"]]).lower()]
+            self._filtros_ativos["tipo"] = escolha
+            self._renderizar_cache(filtrado)
+
+        elif tipo_filtro == "Status":
+            if "status" not in cols:
+                messagebox.showinfo("Filtro Status", "Esta lista não possui coluna de status.", parent=self.root)
+                return
+            opcoes = sorted({str(v[cols["status"]]) for _, v in self._cache_lista if v[cols["status"]]})
+            escolha = simpledialog.askstring(
+                "Filtrar por status",
+                f"Status: {', '.join(opcoes)}\n\nDigite o status:",
+                parent=self.root,
+            )
+            if not escolha:
+                return
+            termo = escolha.strip().lower()
+            filtrado = [(iid, v) for iid, v in self._cache_lista if termo in str(v[cols["status"]]).lower()]
+            self._filtros_ativos["status"] = escolha
+            self._renderizar_cache(filtrado)
+
+        elif tipo_filtro == "Data":
+            if "data" not in cols:
+                messagebox.showinfo("Filtro Data", "Esta lista não possui coluna de data.", parent=self.root)
+                return
+            escolha = simpledialog.askstring(
+                "Filtrar por data",
+                "Digite parte da data (ex.: 2026, 05/2026 ou 15/05):",
+                parent=self.root,
+            )
+            if not escolha:
+                return
+            termo = escolha.strip()
+            filtrado = [(iid, v) for iid, v in self._cache_lista if termo in str(v[cols["data"]])]
+            self._filtros_ativos["data"] = termo
+            self._renderizar_cache(filtrado)
+
+        elif tipo_filtro == "Ordenar":
+            menu_ord = tk.Menu(self.root, tearoff=0)
+            menu_ord.add_command(label="Data (vencimento / venda) ↑", command=lambda: self._ordenar_lista("data", False))
+            menu_ord.add_command(label="Data (vencimento / venda) ↓", command=lambda: self._ordenar_lista("data", True))
+            menu_ord.add_command(label="Nome / Cliente (A→Z)", command=lambda: self._ordenar_lista("nome", False))
+            menu_ord.add_command(label="Nome / Cliente (Z→A)", command=lambda: self._ordenar_lista("nome", True))
+            try:
+                menu_ord.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+            except tk.TclError:
+                pass
+
+    def _ordenar_lista(self, criterio, reverso):
+        if not self._cache_lista:
+            self._atualizar_cache_lista()
+        cols = self._indice_coluna_filtro()
+        if criterio == "data" and "data" in cols:
+            idx = cols["data"]
+        else:
+            idx = 0
+
+        def chave(item):
+            val = item[1][idx] if idx < len(item[1]) else ""
+            if criterio == "data":
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                    try:
+                        return datetime.strptime(str(val), fmt)
+                    except ValueError:
+                        continue
+            return str(val).lower()
+
+        ordenada = sorted(self._cache_lista, key=chave, reverse=reverso)
+        self._renderizar_cache(ordenada)
 
     def aplicar_utilidades(self, tipo_utilidade):
         """Garante o gancho para aplicar inteligência de utilidades baseada no modo ativo."""
@@ -247,8 +364,8 @@ class SistemaAleSapatilhas:
     def limpar_busca_e_filtros(self):
         self.ent_busca.delete(0, tk.END)
         self._inserir_placeholder(None)
+        self._filtros_ativos = {}
         self.root.focus()
-        #Executa a restauração da lista original baseado no modo atual
         self.atualizar_lista()
 
     def executar_comando_menu(self, comando, modo, btn=None):
@@ -285,6 +402,7 @@ class SistemaAleSapatilhas:
     # --- Função para preparar colunas da Treeview de acordo com o modo atual ---
     def preparar_colunas(self, colunas):
         self.tree.delete(*self.tree.get_children())
+        self._cache_lista = []
         self.tree["columns"] = colunas
         for col in colunas:
             self.tree.heading(col, text=col.upper())
@@ -300,6 +418,7 @@ class SistemaAleSapatilhas:
         for c in database.exibir_clientes():
             # c[1]=tipo, c[2]=nome, c[3]=cpf, c[4]=telefone, c[6]=aniversario, c[7]=calcado, c[13]=limite, c[15]=status
             self.tree.insert("", "end", iid=c[0], values=(c[1], c[2], c[3], c[4], self.formatar_data_exibicao(c[6]), c[7], f"R$ {c[13]:.2f}", c[15]))
+        self._atualizar_cache_lista()
 
     def exibir_produtos(self):
         self.modo_atual = "produtos"
@@ -309,6 +428,7 @@ class SistemaAleSapatilhas:
         self.preparar_colunas(("sku", "produto", "material", "cor", "tamanho", "estoque", "preço", "fornecedor", "status"))
         for i in database.exibir_produtos_com_fornecedor():
             self.tree.insert("", "end", iid=i[0], values=(i[1], i[3], i[10], i[4], i[5], i[8], f"R$ {i[7]:.2f}", i[11], i[12]))
+        self._atualizar_cache_lista()
 
     def exibir_vendas(self):
         self.modo_atual = "vendas"
@@ -318,7 +438,8 @@ class SistemaAleSapatilhas:
         self.preparar_colunas(("cliente", "total", "forma", "data", "status"))
         for v in database.relatorio_vendas_geral():
             self.tree.insert("", "end", iid=v[0], values=(v[1], f"R$ {v[2]:.2f}", v[3], self.formatar_data_exibicao(v[5]), v[7]))
-   
+        self._atualizar_cache_lista()
+
     def exibir_financeiro(self):
         self.modo_atual = "financeiro"
         self.botao_menu_ativo = self.botoes_por_texto.get("📉 FLUXO DE CAIXA")
@@ -328,6 +449,7 @@ class SistemaAleSapatilhas:
         for f in database.obter_todos_registros_financeiros():
             tag = ("cancelado",) if f[10] == "Cancelado" else ()
             self.tree.insert("", "end", iid=f[0], values=(f[1], f[2], f[3], f"R$ {f[4]:.2f}", self.formatar_data_exibicao(f[5]), self.formatar_data_exibicao(f[6]), f[7], f[8], f[9], f[10]), tags=tag)
+        self._atualizar_cache_lista()
 
     def exibir_dashboard(self):
         """KPIs operacionais — visão executiva sem sair da tela principal."""
@@ -362,6 +484,7 @@ class SistemaAleSapatilhas:
                 nome, desc, f"R$ {valor:.2f}", f"R$ {(pago or 0):.2f}", f"R$ {saldo:.2f}",
                 self.formatar_data_exibicao(venc), status,
             ))
+        self._atualizar_cache_lista()
 
     def exibir_contas_a_pagar(self):
         """Relatório de títulos de Despesa em aberto."""
@@ -376,6 +499,7 @@ class SistemaAleSapatilhas:
                 nome, desc, f"R$ {valor:.2f}", f"R$ {(pago or 0):.2f}", f"R$ {saldo:.2f}",
                 self.formatar_data_exibicao(venc), status,
             ))
+        self._atualizar_cache_lista()
 
     # --- Janelas modais (import tardio = lazy import, boa prática em Tkinter) ---
     def abrir_gerenciar_receitas(self):
@@ -391,14 +515,14 @@ class SistemaAleSapatilhas:
             self.atualizar_lista()
 
     def abrir_cadastro_vendas(self):
-        selection = self.tree.selection()
+        """Abre somente o PDV; não troca a tela principal."""
         cliente_selecionado = None
-        if self.modo_atual == "clientes" and selection:
-            valores = self.tree.item(selection[0], "values")
-            cliente_selecionado = (selection[0], valores[1], valores[3])
+        if self.modo_atual == "clientes" and self.tree.selection():
+            sel = self.tree.selection()[0]
+            valores = self.tree.item(sel, "values")
+            cliente_selecionado = (sel, valores[1], valores[3])
         from cadastro_vendas import JanelaCadastroVendas
         JanelaCadastroVendas(self.root, cliente_selecionado)
-        self.exibir_vendas()
 
     def abrir_cadastro_cliente(self):
         from cadastro_clientes import JanelaCadastroClientes
@@ -541,12 +665,18 @@ class SistemaAleSapatilhas:
     
     def filtrar_busca(self):
         termo = self.ent_busca.get().lower()
-        for item in self.tree.get_children(): self.tree.reattach(item, '', 'end')
-        if termo != "" and termo != self.placeholder_busca.lower():
-            for item in self.tree.get_children():
-                valores = self.tree.item(item)['values']
-                if not any(termo in str(v).lower() for v in valores):
-                    self.tree.detach(item)
+        if termo == self.placeholder_busca.lower():
+            termo = ""
+        if not self._cache_lista:
+            self._atualizar_cache_lista()
+        if not termo:
+            self._renderizar_cache(self._cache_lista)
+            return
+        filtrado = [
+            (iid, v) for iid, v in self._cache_lista
+            if any(termo in str(c).lower() for c in v)
+        ]
+        self._renderizar_cache(filtrado)
 
     # --- Funções do menu de contexto ---
     # Cada função de mudança de status agora inclui uma confirmação e, no caso das despesas, uma lógica específica para lidar com a data de pagamento.
