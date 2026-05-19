@@ -62,7 +62,7 @@ def calcular_dimensoes_janela(root, largura_desejada=700, altura_desejada=850, m
     
     if maximizar:
         # Maximiza deixando espaço para barra de tarefas e bordas da janela
-        root.geometry(f"{largura_tela}x{altura_tela - 100}+0+0")
+        root.geometry(f"{largura_tela}x{altura_tela - 70}+0+0")
     else:
         # Usa dimensões padrão
         # Verifica se o tamanho desejado cabe na tela

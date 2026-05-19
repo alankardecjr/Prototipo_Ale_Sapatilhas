@@ -34,6 +34,8 @@ class JanelaCadastroVendas(tk.Toplevel):
         self.grab_set()
         self.focus_set()
 
+        ui_utils.calcular_dimensoes_janela(self, maximizar=True)
+
         paleta = ui_utils.get_paleta()
         self.bg_fundo = paleta["bg_fundo"]
         self.bg_card = paleta["bg_card"]
@@ -53,10 +55,6 @@ class JanelaCadastroVendas(tk.Toplevel):
 
         self.configurar_estilos()
         self.setup_layout()
-        try:
-            self.state("zoomed")
-        except tk.TclError:
-            ui_utils.calcular_dimensoes_janela(self, maximizar=True)
 
         if cliente_selecionado:
             cid = cliente_selecionado[0] if isinstance(cliente_selecionado, (tuple, list)) else cliente_selecionado
@@ -81,6 +79,34 @@ class JanelaCadastroVendas(tk.Toplevel):
         self.listar_estoque_completo()
         self._atualizar_estado_botao_finalizar()
 
+    def _maximizar_janela(self):
+        """Maximiza o PDV e garante que o rodapé de pagamento permaneça visível."""
+        self.update_idletasks()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        margem_tarefa = 48
+        try:
+            self.state("zoomed")
+            self.update_idletasks()
+            self._garantir_rodape_visivel()
+        except tk.TclError:
+            self.geometry(f"{sw}x{sh - margem_tarefa}+0+0")
+        self.main_container.grid_rowconfigure(2, weight=1)
+
+    def _garantir_rodape_visivel(self):
+        """Se a barra de tarefas cobrir o rodapé, reduz a altura da janela."""
+        self.update_idletasks()
+        if not hasattr(self, "frame_pagamento"):
+            return
+        fp = self.frame_pagamento
+        rodape_inferior = fp.winfo_rooty() + fp.winfo_height()
+        limite = self.winfo_screenheight() - 8
+        if rodape_inferior > limite:
+            excesso = rodape_inferior - limite + 12
+            nova_alt = max(640, self.winfo_height() - excesso)
+            self.geometry(f"{self.winfo_width()}x{nova_alt}+0+0")
+            self.update_idletasks()
+
     def configurar_estilos(self):
         self.style = ttk.Style()
         self.style.theme_use("clam")
@@ -104,8 +130,8 @@ class JanelaCadastroVendas(tk.Toplevel):
         titulo_acao = "💾 SALVAR ALTERAÇÕES" if self.venda_id else "💰 FINALIZAR VENDA"
 
         botoes = [
-            (titulo_acao, self.finalizar_venda),
             ("💳 CADASTRAR PAGAMENTO", self.cadastrar_pagamento),
+            (titulo_acao, self.finalizar_venda),
             ("❌ REMOVER ITEM", self.remover_do_carrinho),
             ("↩ ESTORNAR VENDA", self.estornar_venda) if self.venda_id else None,
             ("👤 NOVO CLIENTE", self.abrir_novo_cliente),
@@ -130,6 +156,7 @@ class JanelaCadastroVendas(tk.Toplevel):
         self.main_container = tk.Frame(self, bg=self.bg_fundo)
         self.main_container.pack(side="right", fill="both", expand=True, padx=16, pady=10)
         self.main_container.grid_rowconfigure(2, weight=1)
+        self.main_container.grid_rowconfigure(3, weight=0, minsize=88)
         self.main_container.grid_columnconfigure(0, weight=1)
 
         self.lbl_modo = tk.Label(
@@ -262,10 +289,10 @@ class JanelaCadastroVendas(tk.Toplevel):
     def setup_sessao_carrinho(self, parent):
         f_cart = tk.LabelFrame(parent, text=" 🛒 CARRINHO ", bg=self.bg_card, fg=self.cor_destaque,
                                font=("Segoe UI", 10, "bold"), relief="solid", borderwidth=1)
-        f_cart.pack(side="right", fill="both", expand=True)
+        f_cart.grid(row=0, column=1, sticky="nsew")
 
         cols = ("prod", "tam", "qtd", "sub")
-        self.tree_cart = ttk.Treeview(f_cart, columns=cols, show="tree headings", style="PDV.Treeview", height=8)
+        self.tree_cart = ttk.Treeview(f_cart, columns=cols, show="tree headings", style="PDV.Treeview", height=6)
         self.tree_cart.heading("#0", text="FOTO")
         self.tree_cart.column("#0", width=52, anchor="center")
         for col in cols:
@@ -273,9 +300,9 @@ class JanelaCadastroVendas(tk.Toplevel):
             self.tree_cart.column(col, width=85, anchor="center")
         self.tree_cart.pack(fill="both", expand=True, padx=5, pady=5)
 
-        self.lbl_total = tk.Label(f_cart, text="TOTAL: R$ 0,00", font=("Segoe UI", 20, "bold"),
+        self.lbl_total = tk.Label(f_cart, text="TOTAL: R$ 0,00", font=("Segoe UI", 18, "bold"),
                                   bg=self.bg_card, fg=self.cor_destaque)
-        self.lbl_total.pack(pady=5, side="bottom")
+        self.lbl_total.pack(pady=4, side="bottom", fill="x")
 
     def _fechar_pdv(self):
         if ui_utils.confirmar(self, "Sair", "Deseja fechar o PDV?"):
