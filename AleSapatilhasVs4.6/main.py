@@ -28,6 +28,7 @@ class SistemaAleSapatilhas:
     """
 
     def __init__(self, root):
+        """Inicializa a janela principal, paleta, estado das listas e exibe vendas."""
         self.root = root
         self.root.title("Alê Sapatilhas - Gestão Integrada")
         
@@ -52,7 +53,10 @@ class SistemaAleSapatilhas:
         self.botoes_menu = {}
         self.botoes_por_texto = {}
         self.botao_menu_ativo = None
-        self._cache_lista = []  # (iid, valores) para filtros/ordenação sem novo SELECT
+        self._cache_lista = []  # snapshot completo da lista
+        self._lista_exibida = []  # vista atual (filtros + busca)
+        self._pilha_vistas = []  # restaura ao apagar busca
+        self._termo_busca_anterior = ""
         self._filtros_ativos = {}
         
         self.setup_ui()
@@ -60,6 +64,7 @@ class SistemaAleSapatilhas:
         self.exibir_vendas()
 
     def formatar_data_exibicao(self, data_str):
+        """Converte data ISO (AAAA-MM-DD) para exibição DD/MM/AAAA."""
         if data_str:
             try: 
                 return datetime.strptime(data_str, "%Y-%m-%d").strftime("%d/%m/%Y")
@@ -67,6 +72,7 @@ class SistemaAleSapatilhas:
         return ""
     
     def _aplicar_estilo_foco(self, ent):
+        """Aplica hover e destaque de foco em campos Entry da tela principal."""
         def on_enter(e):
             if ent.focus_get() != ent: ent.config(highlightbackground=self.cor_hover_field)
         def on_leave(e):
@@ -77,10 +83,12 @@ class SistemaAleSapatilhas:
         ent.bind("<FocusIn>", on_focus_in); ent.bind("<FocusOut>", on_focus_out)
 
     def aplicar_hover(self, btn):
+        """Destaca botão do menu lateral ao passar o mouse."""
         btn.bind("<Enter>", lambda e: btn.config(bg=self.cor_hover_btn))
         btn.bind("<Leave>", lambda e: btn.config(bg=self.cor_btn_menu))
 
     def setup_ui(self):
+        """Monta sidebar, área de listagem, busca e bindings da Treeview."""
         # Sidebar
         self.sidebar = tk.Frame(self.root, bg=self.cor_btn_sair, width=220)
         self.sidebar.pack(side="left", fill="y")
@@ -165,7 +173,7 @@ class SistemaAleSapatilhas:
 
     # -- Componente de Barra de Busca Avançada ---
     def criar_barra_busca(self, container_pai):
-        # Frame Principal da Barra de Busca
+        """Cria campo de busca, botões Filtrar, Limpar e Utilidades."""
         search_frame = tk.Frame(container_pai, bg=self.bg_fundo)
         search_frame.pack(fill="x", pady=(0, 15))
         tk.Label(search_frame, text="BUSCA RÁPIDA", font=("Segoe UI", 10, "bold"), bg=self.bg_fundo).pack(side="left")
@@ -184,7 +192,6 @@ class SistemaAleSapatilhas:
         self.ent_busca.bind("<FocusOut>", self._inserir_placeholder)
         self.ent_busca.bind("<KeyRelease>", lambda e: self.filtrar_busca())
 
-        # Estilo padrão para os botões da direita
         btn_estilo = {
             "font": ("Segoe UI", 9, "bold"),
             "bg": self.cor_btn_menu,
@@ -193,49 +200,33 @@ class SistemaAleSapatilhas:
             "activebackground": self.cor_destaque,
             "activeforeground": "white",
             "cursor": "hand2",
-            "padx": 15,
-            "pady": 5
+            "width": 14,
+            "height": 1,
         }
 
-        # Adicionando as opções ao Menu
-        # --- Botão 1: Filtrar (Menubutton para Menu Dropdown) ---
-        btn_filtrar = tk.Menubutton(search_frame, text="⏳ FILTRAR", **btn_estilo)
-        menu_filtrar = tk.Menu(btn_filtrar, tearoff=0, bg=self.bg_card, fg=self.cor_texto, font=("Segoe UI", 9))
-        menu_filtrar.add_command(label="Tipo", command=lambda: self.aplicar_filtro_avancado("Tipo"))
-        menu_filtrar.add_command(label="Data", command=lambda: self.aplicar_filtro_avancado("Data"))
-        menu_filtrar.add_command(label="Status", command=lambda: self.aplicar_filtro_avancado("Status"))
-        menu_filtrar.add_separator()
-        menu_filtrar.add_command(label="Ordenar", command=lambda: self.aplicar_filtro_avancado("Ordenar"))
-        
-        btn_filtrar.config(menu=menu_filtrar)
-        btn_filtrar.pack(side="left", padx=2)
-        btn_filtrar.bind("<Enter>", lambda e: btn_filtrar.config(bg=self.cor_hover_btn))
-        btn_filtrar.bind("<Leave>", lambda e: btn_filtrar.config(bg=self.cor_btn_menu))
+        self.btn_filtrar = tk.Button(search_frame, text="⏳ FILTRAR", command=self.abrir_menu_filtrar, **btn_estilo)
+        self.btn_filtrar.pack(side="left", padx=2, ipady=6)
+        self.btn_filtrar.bind("<Enter>", lambda e: self.btn_filtrar.config(bg=self.cor_hover_btn))
+        self.btn_filtrar.bind("<Leave>", lambda e: self.btn_filtrar.config(bg=self.cor_btn_menu))
 
-        btn_limpar = tk.Button(search_frame, text="❌ LIMPAR", command=self.limpar_busca_e_filtros, **btn_estilo)
-        btn_limpar.pack(side="left", padx=2)
-        btn_limpar.bind("<Enter>", lambda e: btn_limpar.config(bg=self.cor_hover_btn))
-        btn_limpar.bind("<Leave>", lambda e: btn_limpar.config(bg=self.cor_btn_menu))
+        self.btn_limpar = tk.Button(search_frame, text="❌ LIMPAR", command=self.limpar_busca_e_filtros, **btn_estilo)
+        self.btn_limpar.pack(side="left", padx=2, ipady=6)
+        self.btn_limpar.bind("<Enter>", lambda e: self.btn_limpar.config(bg=self.cor_hover_btn))
+        self.btn_limpar.bind("<Leave>", lambda e: self.btn_limpar.config(bg=self.cor_btn_menu))
 
-        btn_utilidades = tk.Menubutton(search_frame, text="➕ UTILIDADES", **btn_estilo)
-        menu_utilidades = tk.Menu(btn_utilidades, tearoff=0, bg=self.bg_card, fg=self.cor_texto, font=("Segoe UI", 9))
-        menu_utilidades.add_command(label="Calculadora", command=lambda: self.aplicar_utilidades("Calculadora"))
-        menu_utilidades.add_command(label="Calendário", command=lambda: self.aplicar_utilidades("Calendário"))
-        menu_utilidades.add_command(label="Anotações", command=lambda: self.aplicar_utilidades("Anotações"))
-        menu_utilidades.add_separator()
-        menu_utilidades.add_command(label="Configurações", command=lambda: self.aplicar_utilidades("Configurações"))
-        
-        btn_utilidades.config(menu=menu_utilidades)
-        btn_utilidades.pack(side="right", padx=2)
-        btn_utilidades.bind("<Enter>", lambda e: btn_utilidades.config(bg=self.cor_hover_btn))
-        btn_utilidades.bind("<Leave>", lambda e: btn_utilidades.config(bg=self.cor_btn_menu))
+        self.btn_utilidades = tk.Button(search_frame, text="➕ UTILIDADES", command=self.abrir_menu_utilidades, **btn_estilo)
+        self.btn_utilidades.pack(side="right", padx=2, ipady=6)
+        self.btn_utilidades.bind("<Enter>", lambda e: self.btn_utilidades.config(bg=self.cor_hover_btn))
+        self.btn_utilidades.bind("<Leave>", lambda e: self.btn_utilidades.config(bg=self.cor_btn_menu))
 
     def _remover_placeholder(self, event):
+        """Remove texto cinza placeholder ao focar o campo de busca."""
         if self.ent_busca.get() == self.placeholder_busca:
             self.ent_busca.delete(0, tk.END)
             self.ent_busca.config(fg=self.cor_texto)
 
     def _inserir_placeholder(self, event):
+        """Restaura placeholder quando o campo de busca fica vazio."""
         if not self.ent_busca.get().strip():
             self.ent_busca.insert(0, self.placeholder_busca)
             self.ent_busca.config(fg="gray")
@@ -243,11 +234,16 @@ class SistemaAleSapatilhas:
     def _atualizar_cache_lista(self):
         """Guarda snapshot da Treeview para filtrar sem consultar o banco de novo."""
         self._cache_lista = [(iid, self.tree.item(iid, "values")) for iid in self.tree.get_children()]
+        self._lista_exibida = list(self._cache_lista)
+        self._pilha_vistas = []
+        self._termo_busca_anterior = ""
 
     def _renderizar_cache(self, linhas):
+        """Atualiza a Treeview com lista (iid, valores) e guarda vista atual."""
         self.tree.delete(*self.tree.get_children())
         for iid, valores in linhas:
             self.tree.insert("", "end", iid=iid, values=valores)
+        self._lista_exibida = list(linhas)
 
     def _indice_coluna_filtro(self):
         """Retorna índices de colunas (valores) conforme o modo da lista."""
@@ -356,19 +352,132 @@ class SistemaAleSapatilhas:
         ordenada = sorted(self._cache_lista, key=chave, reverse=reverso)
         self._renderizar_cache(ordenada)
 
+    def abrir_menu_utilidades(self):
+        """Abre menu popup com calculadora, calendário, anotações e configurações."""
+        menu = tk.Menu(self.root, tearoff=0, bg=self.bg_card, fg=self.cor_texto, font=("Segoe UI", 9))
+        menu.add_command(label="Calculadora", command=lambda: self.aplicar_utilidades("Calculadora"))
+        menu.add_command(label="Calendário", command=lambda: self.aplicar_utilidades("Calendário"))
+        menu.add_command(label="Anotações", command=lambda: self.aplicar_utilidades("Anotações"))
+        menu.add_separator()
+        menu.add_command(label="Configurações", command=lambda: self.aplicar_utilidades("Configurações"))
+        try:
+            menu.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        except tk.TclError:
+            pass
+
     def aplicar_utilidades(self, tipo_utilidade):
-        """Garante o gancho para aplicar inteligência de utilidades baseada no modo ativo."""
-        # Aqui podemos interceptar qual botão foi clicado para abrir sub-caixas com ferrramentas como calculadora, calendário, etc.
-        messagebox.showinfo("Utilidades", f"Utilidade por '{tipo_utilidade}' acionada.")
-    
+        """Executa a ferramenta auxiliar escolhida no menu Utilidades."""
+        if tipo_utilidade == "Calculadora":
+            ui_utils.abrir_calculadora(self.root)
+        elif tipo_utilidade == "Calendário":
+            ui_utils.abrir_calendario_info(self.root)
+        elif tipo_utilidade == "Anotações":
+            ui_utils.abrir_anotacoes(self.root)
+        elif tipo_utilidade == "Configurações":
+            ui_utils.abrir_configuracoes(self.root)
+
+    def abrir_menu_filtrar(self):
+        """Monta menu de filtros dinâmico conforme o modo da lista (tipo, status, data)."""
+        if self.modo_atual == "dashboard":
+            messagebox.showinfo("Filtros", "Abra uma lista para usar filtros.", parent=self.root)
+            return
+        if not self._cache_lista:
+            self._atualizar_cache_lista()
+        if not self._cache_lista:
+            return
+
+        menu = tk.Menu(self.root, tearoff=0, bg=self.bg_card, fg=self.cor_texto, font=("Segoe UI", 9))
+        cols = self._indice_coluna_filtro()
+
+        if "tipo" in cols:
+            sub_tipo = tk.Menu(menu, tearoff=0)
+            opcoes = sorted({str(v[cols["tipo"]]) for _, v in self._cache_lista if v[cols["tipo"]]})
+            for op in opcoes:
+                sub_tipo.add_command(label=op, command=lambda o=op: self._filtrar_por_campo("tipo", o, cols["tipo"]))
+            menu.add_cascade(label="Tipo", menu=sub_tipo)
+
+        if "status" in cols:
+            sub_st = tk.Menu(menu, tearoff=0)
+            opcoes = sorted({str(v[cols["status"]]) for _, v in self._cache_lista if v[cols["status"]]})
+            for op in opcoes:
+                sub_st.add_command(label=op, command=lambda o=op: self._filtrar_por_campo("status", o, cols["status"]))
+            menu.add_cascade(label="Status", menu=sub_st)
+
+        if "data" in cols:
+            sub_dt = tk.Menu(menu, tearoff=0)
+            for rotulo, modo in [("Hoje (dia)", "Dia"), ("Esta semana", "Semana"), ("Este mês", "Mês"), ("Período personalizado", "Periodo")]:
+                sub_dt.add_command(label=rotulo, command=lambda m=modo: self._filtrar_por_data(m, cols["data"]))
+            menu.add_cascade(label="Data", menu=sub_dt)
+
+        sub_ord = tk.Menu(menu, tearoff=0)
+        sub_ord.add_command(label="Data ↑", command=lambda: self._ordenar_lista("data", False))
+        sub_ord.add_command(label="Data ↓", command=lambda: self._ordenar_lista("data", True))
+        sub_ord.add_command(label="Nome A→Z", command=lambda: self._ordenar_lista("nome", False))
+        sub_ord.add_command(label="Nome Z→A", command=lambda: self._ordenar_lista("nome", True))
+        menu.add_cascade(label="Ordenar", menu=sub_ord)
+
+        try:
+            menu.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        except tk.TclError:
+            pass
+
+    def _filtrar_por_campo(self, chave_filtro, valor, idx_col):
+        """Filtra a lista exibida por valor em uma coluna (tipo ou status)."""
+        if not ui_utils.confirmar(self.root, "Filtrar", f"Aplicar filtro {chave_filtro} = '{valor}'?"):
+            return
+        termo = str(valor).lower()
+        filtrado = [(iid, v) for iid, v in self._cache_lista if termo in str(v[idx_col]).lower()]
+        self._filtros_ativos[chave_filtro] = valor
+        self._pilha_vistas = []
+        self._renderizar_cache(filtrado)
+
+    def _filtrar_por_data(self, modo, idx_col):
+        """Filtra registros por dia, semana, mês ou intervalo personalizado."""
+        if modo == "Periodo":
+            ini = simpledialog.askstring("Período", "Data inicial (DD/MM/AAAA):", parent=self.root)
+            fim = simpledialog.askstring("Período", "Data final (DD/MM/AAAA):", parent=self.root)
+            if not ini or not fim:
+                return
+            try:
+                d_ini = datetime.strptime(ini.strip(), "%d/%m/%Y").date()
+                d_fim = datetime.strptime(fim.strip(), "%d/%m/%Y").date()
+            except ValueError:
+                messagebox.showerror("Data", "Formato inválido. Use DD/MM/AAAA.", parent=self.root)
+                return
+
+            def no_periodo(val):
+                for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                    try:
+                        dt = datetime.strptime(str(val), fmt).date()
+                        return d_ini <= dt <= d_fim
+                    except ValueError:
+                        continue
+                return False
+
+            filtrado = [(iid, v) for iid, v in self._cache_lista if no_periodo(v[idx_col])]
+        else:
+            filtrado = [(iid, v) for iid, v in self._cache_lista if ui_utils.filtro_data_periodo(modo, v[idx_col])]
+
+        if not ui_utils.confirmar(self.root, "Filtrar", f"Aplicar filtro de data: {modo}?"):
+            return
+        self._filtros_ativos["data"] = modo
+        self._pilha_vistas = []
+        self._renderizar_cache(filtrado)
+
     def limpar_busca_e_filtros(self):
+        """Zera busca, filtros e pilha; recarrega a lista do modo atual."""
+        if not ui_utils.confirmar(self.root, "Limpar", "Limpar busca e filtros da lista?"):
+            return
         self.ent_busca.delete(0, tk.END)
         self._inserir_placeholder(None)
         self._filtros_ativos = {}
+        self._pilha_vistas = []
+        self._termo_busca_anterior = ""
         self.root.focus()
         self.atualizar_lista()
 
     def executar_comando_menu(self, comando, modo, btn=None):
+        """Executa ação do menu lateral e atualiza modo/destaque do botão."""
         if comando:
             comando()
         if modo:
@@ -378,7 +487,7 @@ class SistemaAleSapatilhas:
         self.atualizar_destaque_menu()
 
     def atualizar_destaque_menu(self):
-        """Destaca apenas o botão de menu selecionado pelo usuário."""
+        """Destaca visualmente o botão ativo na barra lateral."""
         for texto, btn in self.botoes_por_texto.items():
             if btn == self.botao_menu_ativo:
                 btn.config(bg=self.cor_destaque, fg="white")
@@ -401,6 +510,7 @@ class SistemaAleSapatilhas:
 
     # --- Função para preparar colunas da Treeview de acordo com o modo atual ---
     def preparar_colunas(self, colunas):
+        """Redefine colunas da Treeview e limpa cache de filtros."""
         self.tree.delete(*self.tree.get_children())
         self._cache_lista = []
         self.tree["columns"] = colunas
@@ -410,6 +520,7 @@ class SistemaAleSapatilhas:
 
     # --- Funções de carregamento ---
     def exibir_clientes(self):
+        """Carrega e exibe a lista de contatos (clientes/fornecedores)."""
         self.modo_atual = "clientes"
         self.botao_menu_ativo = self.botoes_por_texto.get("👥 GERENCIAR CONTATOS")
         self.atualizar_destaque_menu()
@@ -421,6 +532,7 @@ class SistemaAleSapatilhas:
         self._atualizar_cache_lista()
 
     def exibir_produtos(self):
+        """Carrega e exibe o estoque de produtos com fornecedor."""
         self.modo_atual = "produtos"
         self.botao_menu_ativo = self.botoes_por_texto.get("👠 GERENCIAR PRODUTOS")
         self.atualizar_destaque_menu()
@@ -431,6 +543,7 @@ class SistemaAleSapatilhas:
         self._atualizar_cache_lista()
 
     def exibir_vendas(self):
+        """Carrega e exibe o relatório de vendas."""
         self.modo_atual = "vendas"
         self.botao_menu_ativo = self.botoes_por_texto.get("📑 GERENCIAR VENDAS")
         self.atualizar_destaque_menu()
@@ -441,6 +554,7 @@ class SistemaAleSapatilhas:
         self._atualizar_cache_lista()
 
     def exibir_financeiro(self):
+        """Carrega e exibe o fluxo de caixa consolidado."""
         self.modo_atual = "financeiro"
         self.botao_menu_ativo = self.botoes_por_texto.get("📉 FLUXO DE CAIXA")
         self.atualizar_destaque_menu()
@@ -515,7 +629,7 @@ class SistemaAleSapatilhas:
             self.atualizar_lista()
 
     def abrir_cadastro_vendas(self):
-        """Abre somente o PDV; não troca a tela principal."""
+        """Abre o PDV; se houver cliente selecionado na lista, envia ao checkout."""
         cliente_selecionado = None
         if self.modo_atual == "clientes" and self.tree.selection():
             sel = self.tree.selection()[0]
@@ -664,19 +778,32 @@ class SistemaAleSapatilhas:
         self.exibir_financeiro()
     
     def filtrar_busca(self):
+        """Filtra a vista atual por texto; usa pilha para restaurar ao apagar."""
         termo = self.ent_busca.get().lower()
         if termo == self.placeholder_busca.lower():
             termo = ""
         if not self._cache_lista:
             self._atualizar_cache_lista()
+        base = self._lista_exibida if self._lista_exibida else self._cache_lista
+
         if not termo:
-            self._renderizar_cache(self._cache_lista)
+            if self._pilha_vistas:
+                restaurar = self._pilha_vistas.pop()
+                self._renderizar_cache(restaurar)
+            else:
+                self._renderizar_cache(self._cache_lista)
+            self._termo_busca_anterior = ""
             return
+
+        if not self._termo_busca_anterior and termo:
+            self._pilha_vistas.append(list(base))
+
         filtrado = [
-            (iid, v) for iid, v in self._cache_lista
+            (iid, v) for iid, v in base
             if any(termo in str(c).lower() for c in v)
         ]
         self._renderizar_cache(filtrado)
+        self._termo_busca_anterior = termo
 
     # --- Funções do menu de contexto ---
     # Cada função de mudança de status agora inclui uma confirmação e, no caso das despesas, uma lógica específica para lidar com a data de pagamento.
@@ -970,6 +1097,7 @@ Recorrência: {recorrencia or 'Não Recorrente'}
 
     # --- Função para atualizar a lista exibida com base no modo atual, garantindo que as alterações sejam refletidas imediatamente após ações de edição ou status ---
     def atualizar_lista(self):
+        """Recarrega a listagem conforme o modo_atual (botão Atualizar)."""
         if self.modo_atual == "clientes":
             self.exibir_clientes()
         elif self.modo_atual == "produtos":
@@ -987,6 +1115,7 @@ Recorrência: {recorrencia or 'Não Recorrente'}
 
 
     def confirmar_saida(self):
+        """Encerra o aplicativo após confirmação do usuário."""
         if messagebox.askyesno("Sair", "Deseja encerrar o sistema Ale Sapatilhas?"):
             self.root.destroy()
 

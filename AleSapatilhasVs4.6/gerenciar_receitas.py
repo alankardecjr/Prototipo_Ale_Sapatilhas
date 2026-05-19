@@ -17,10 +17,16 @@ import ui_utils
 
 
 class JanelaGerenciarReceitas(tk.Toplevel):
-    """Formulário modal para recebimentos e manutenção de parcelas."""
-    def __init__(self, master, dados_receita=None, venda_id=None):
+    """
+    Contas a receber: baixa de parcelas de vendas e receitas avulsas.
+
+    on_sucesso: callback opcional (ex.: PDV após cadastrar pagamento).
+    """
+    def __init__(self, master, dados_receita=None, venda_id=None, on_sucesso=None):
+        """Carrega receita, venda vinculada ou lista vazia para novo recebimento."""
         super().__init__(master)
         self.venda_id = venda_id
+        self.on_sucesso = on_sucesso
         
         # --- Paleta de cores ---
         paleta = ui_utils.get_paleta()
@@ -40,7 +46,7 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.configure(bg=self.bg_fundo)
         self.resizable(False, False)
         
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=680)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=680)
         
         self.receita_id = dados_receita[0] if dados_receita else None
         self.cliente_selecionado_id = None
@@ -172,11 +178,14 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         # Datas Cadastrais e Operacionais
         self.ent_lancamento = criar_campo_form("DATA EMISSÃO", 4, 1)
         self.ent_lancamento.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_lancamento, row=5, column=1, sticky="e")
         
         self.ent_vencimento = criar_campo_form("DATA VENCIMENTO PARCELA*", 4, 2)
         self.ent_vencimento.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_vencimento, row=5, column=2, sticky="e")
         
         self.ent_pagamento = criar_campo_form("DATA LIQUIDAÇÃO", 6, 0)
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_pagamento, row=7, column=0, sticky="e")
 
         # Comboboxes de Estado da Receita
         tk.Label(form_frame, text="STATUS RECEBIMENTO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=6, column=1, sticky="w", padx=5)
@@ -277,7 +286,8 @@ class JanelaGerenciarReceitas(tk.Toplevel):
             ))
 
     def validar_e_salvar(self):
-        self.salvar_crud()
+        if ui_utils.confirmar(self, "Confirmar", "Deseja salvar os dados de recebimento?"):
+            self.salvar_crud()
 
     def pesquisar_clientes(self, event=None):
         termo = self.ent_busca_cli.get().lower()
@@ -440,11 +450,15 @@ class JanelaGerenciarReceitas(tk.Toplevel):
                 )
                 return
 
-        if hasattr(self.master, "exibir_financeiro"): self.master.exibir_financeiro()
+        if hasattr(self.master, "exibir_financeiro"):
+            self.master.exibir_financeiro()
+        cb = self.on_sucesso
         self.destroy()
+        if cb:
+            cb()
 
     def excluir_crud(self):
-        if self.receita_id and messagebox.askyesno("Estorno Definitivo", "Deseja estornar e apagar este lançamento?", parent=self):
+        if self.receita_id and ui_utils.confirmar(self, "Estorno Definitivo", "Deseja estornar e apagar este lançamento?"):
             with database.conectar() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM financeiro WHERE id=? AND tipo='Receita'", (self.receita_id,))

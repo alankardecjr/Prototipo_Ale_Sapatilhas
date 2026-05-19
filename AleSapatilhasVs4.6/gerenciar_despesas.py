@@ -16,8 +16,13 @@ import ui_utils
 
 
 class JanelaGerenciarDespesas(tk.Toplevel):
-    """Formulário modal para CRUD de títulos tipo Despesa."""
+    """
+    Contas a pagar: cadastro/edição de despesas com parcelas e pagamento parcial.
+
+    Fornecedor é texto livre (opcional); datas com mini calendário.
+    """
     def __init__(self, master, dados_despesa=None):
+        """Abre formulário vazio ou preenchido para edição de despesa existente."""
         super().__init__(master)
         
         # --- Paleta de cores ---
@@ -40,7 +45,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.resizable(False, False)
         
         # --- Aplicar dimensões padrão (600px largura, altura aumentada) ---
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=680)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=680)
         
         self.despesa_id = dados_despesa[0] if dados_despesa else None
         self.fornecedor_selecionado_id = None
@@ -145,7 +150,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
             self.aplicar_estilo_foco(ent)
             return ent
 
-        self.ent_forn_nome = criar_campo_form("FORNECEDOR NOMINAL*", 0, 0, c_span=2)
+        self.ent_forn_nome = criar_campo_form("FORNECEDOR (opcional)", 0, 0, c_span=2)
         self.ent_desc = criar_campo_form("DESCRIÇÃO DA DESPESA*", 0, 2, c_span=1)
 
         # Valores, Ajustes de Encargos/Descontos e Pagamentos Parciais
@@ -167,11 +172,14 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         # Datas Cadastrais e Operacionais
         self.ent_lancamento = criar_campo_form("DATA LANÇAMENTO", 4, 1)
         self.ent_lancamento.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_lancamento, row=5, column=1, sticky="e")
         
         self.ent_vencimento = criar_campo_form("DATA VENCIMENTO*", 4, 2)
         self.ent_vencimento.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_vencimento, row=5, column=2, sticky="e")
         
         self.ent_pagamento = criar_campo_form("DATA PAGAMENTO", 6, 0)
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_pagamento, row=7, column=0, sticky="e")
 
         # Comboboxes de Estado da Despesa
         tk.Label(form_frame, text="STATUS*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=6, column=1, sticky="w", padx=5)
@@ -216,28 +224,30 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.tree_parcelas.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5)
         self.tree_parcelas.bind("<<TreeviewSelect>>", self.carregar_parcela_selecionada)
 
-        # --- BOTÕES DE AÇÃO OPERACIONAL (Dual Mode e Hover) ---
         texto_btn = "ATUALIZAR DESPESA" if self.despesa_id else "SALVAR DESPESA"
-        self.btn_salvar = tk.Button(main_frame, text=texto_btn, bg=self.cor_btn_acao, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.validar_e_salvar)
-        self.btn_deletar = tk.Button(main_frame, text="EXCLUIR REGISTRO FINANCEIRO", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.excluir_crud)
-        self.btn_deletar.grid_remove()
-        self.btn_cancelar = tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_btn_sair, fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=self.destroy)
-        self._posicionar_botoes_rodape()
-      
-       # Bind Hovers
-        self.btn_salvar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
-        self.btn_salvar.bind("<Leave>", lambda e: e.widget.config(bg=self.cor_btn_acao))
-        self.btn_cancelar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
-        self.btn_cancelar.bind("<Leave>", lambda e: e.widget.config(bg=self.cor_btn_sair))
+        _pal = ui_utils.get_paleta()
+        frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
+        frame_rodape.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        frame_rodape.columnconfigure((0, 1, 2), weight=1)
+        self.btn_salvar = ui_utils.criar_botao_rodape(
+            frame_rodape, texto_btn, self.cor_btn_acao, self.validar_e_salvar, _pal
+        )
+        self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
+        self.btn_deletar = ui_utils.criar_botao_rodape(
+            frame_rodape, "EXCLUIR", self.cor_destaque, self.excluir_crud, _pal
+        )
+        self.btn_cancelar = ui_utils.criar_botao_rodape(
+            frame_rodape, "FECHAR", self.cor_btn_sair, self.destroy, _pal
+        )
+        if self.despesa_id:
+            self.btn_deletar.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+            self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
+        else:
+            self.btn_cancelar.grid(row=0, column=1, sticky="ew", padx=(4, 0), ipady=6)
 
     # --- LÓGICA ---
-    def _posicionar_botoes_rodape(self):
-        """Ações fixas logo abaixo do histórico de parcelas."""
-        self.btn_salvar.grid(row=5, column=0, columnspan=3, pady=(8, 2), sticky="ew", ipady=4)
-        self.btn_deletar.grid(row=6, column=0, columnspan=3, pady=2, sticky="ew", ipady=4)
-        self.btn_cancelar.grid(row=7, column=0, columnspan=3, pady=(2, 5), sticky="ew", ipady=4)
-
     def toggle_recorrencia(self, event=None):
+        """Exibe ou oculta campo de parcelas quando recorrência é Parcelar."""
         if self.cb_recorrencia.get() == "Parcelar":
             self.lbl_parc.grid(row=8, column=2, sticky="w", padx=5)
             self.ent_parc.grid(row=9, column=2, sticky="ew", ipady=3, padx=5)
@@ -356,13 +366,11 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.carregar_parcelas_historico(d[5], d[6])
 
     def validar_e_salvar(self):
-        self.salvar_crud()
+        if ui_utils.confirmar(self, "Confirmar", "Deseja salvar esta despesa?"):
+            self.salvar_crud()
 
     def salvar_crud(self):
-        if not self.fornecedor_selecionado_id and not self.despesa_id:
-            messagebox.showwarning("Validação", "Selecione um fornecedor na lista de contatos.", parent=self)
-            return
-        nome = self.ent_forn_nome.get().strip()
+        nome = self.ent_forn_nome.get().strip() or "Sem fornecedor"
         desc = self.ent_desc.get().strip()
         v_base = self.ent_valor_base.get().replace(",", ".")
         v_pago = self.ent_valor_pago.get().replace(",", ".")
@@ -373,8 +381,8 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         dat_ven = self.formatar_data_para_bd(self.ent_vencimento.get())
         dat_pag = self.formatar_data_para_bd(self.ent_pagamento.get()) if self.ent_pagamento.get().strip() else None
 
-        if not nome or not desc or not v_base or not dat_ven:
-            messagebox.showwarning("Validação", "Os campos Fornecedor, Descrição, Valor Base e Vencimento são obrigatórios.", parent=self)
+        if not desc or not v_base or not dat_ven:
+            messagebox.showwarning("Validação", "Descrição, Valor Base e Vencimento são obrigatórios.", parent=self)
             return
 
         try:
@@ -424,7 +432,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.destroy()
 
     def excluir_crud(self):
-        if self.despesa_id and messagebox.askyesno("Exclusão Estrita", "Deseja remover este registro financeiro (e as parcelas vinculadas)?", parent=self):
+        if self.despesa_id and ui_utils.confirmar(self, "Exclusão", "Deseja remover este registro financeiro (e as parcelas vinculadas)?"):
             sucesso, msg = database.deletar_despesa(self.despesa_id)
             if sucesso:
                 messagebox.showinfo("Sucesso", msg, parent=self)

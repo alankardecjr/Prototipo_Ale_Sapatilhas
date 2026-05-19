@@ -343,12 +343,10 @@ def realizar_venda_crediario(cliente_id, lista_produtos, parcelas, desc_venda=0)
 
 def realizar_venda_segura(cliente_id, lista_produtos, forma_pgto, parcelas=1, desconto_total=0):
     """
-    Transação atômica de venda (padrão ACID simplificado):
-      1. Valida estoque
-      2. Grava venda + itens_venda
-      3. Baixa estoque
-      4. Gera parcelas em financeiro (Receita)
-    Em erro: rollback desfaz tudo.
+  Transação atômica de venda: valida estoque, grava venda/itens, baixa estoque e gera receitas.
+
+    Retorno: (sucesso: bool, mensagem: str, venda_id: int|None)
+    Em erro faz rollback de toda a operação.
     """
     with conectar() as conn:
         cursor = conn.cursor()
@@ -357,7 +355,7 @@ def realizar_venda_segura(cliente_id, lista_produtos, forma_pgto, parcelas=1, de
                 cursor.execute("SELECT quantidade, produto FROM produtos WHERE id = ?", (item['id'],))
                 res = cursor.fetchone()
                 if not res or res[0] < item['qtd']:
-                    return False, f"Estoque insuficiente: {res[1] if res else 'Produto não encontrado'}"
+                    return False, f"Estoque insuficiente: {res[1] if res else 'Produto não encontrado'}", None
            
             total_bruto = sum(p['qtd'] * p['preco'] for p in lista_produtos)
             total_liquido = round(total_bruto - desconto_total, 2)
@@ -387,10 +385,10 @@ def realizar_venda_segura(cliente_id, lista_produtos, forma_pgto, parcelas=1, de
                       valor_parcela, valor_parcela, i+1, parcelas, vencimento))
 
             conn.commit()
-            return True, "Venda finalizada com sucesso!"
+            return True, "Venda finalizada com sucesso!", venda_id
         except Exception as e:
             conn.rollback()
-            return False, f"Erro ao verificar venda: {str(e)}"
+            return False, f"Erro ao verificar venda: {str(e)}", None
 
 def cancelar_venda(venda_id, motivo="Cancelamento solicitado"):
     """
@@ -829,7 +827,10 @@ def listar_itens():
     """Recupera produtos disponíveis para o checkout."""
     with conectar() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, produto, cor, tamanho, precocusto, precovenda, quantidade FROM produtos WHERE status_item != 'Indisponível'")
+        cursor.execute(
+            "SELECT id, produto, cor, tamanho, precocusto, precovenda, quantidade, foto "
+            "FROM produtos WHERE status_item != 'Indisponível' ORDER BY produto ASC"
+        )
         return cursor.fetchall()
 
 if __name__ == "__main__":

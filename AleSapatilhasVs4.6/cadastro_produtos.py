@@ -6,16 +6,27 @@ SKU único com variação automática quando cor/tamanho divergem.
 """
 
 import os
+import shutil
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from datetime import datetime
 import database
 import ui_utils
 
+try:
+    from PIL import Image, ImageTk
+except ImportError:
+    Image = ImageTk = None
+
 
 class JanelaCadastroProdutos(tk.Toplevel):
-    """Cadastro de SKU, grade (cor/tamanho) e vínculo com fornecedor."""
+    """
+    Formulário de estoque: SKU automático, grade cor/tamanho, tipo e fornecedor opcional.
+
+    Salvar atualiza registro ou cria variação; Salvar e Continuar mantém o modelo na tela.
+    """
     def __init__(self, master, dados_produto=None):
+        """Abre cadastro novo ou em modo edição se dados_produto for informado."""
         super().__init__(master)
         
         # --- Paleta de cores ---
@@ -40,10 +51,10 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self._manter_em_primeiro_plano()
         
         # --- Aplicar dimensões padrão (600px largura, altura ajustada) ---
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=950)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=900)
 
         self.produto_id = dados_produto[0] if dados_produto else None
-        self.fornecedor_id = None
+        self._dados_base_edicao = None
         
         self.list_categorias = ["Sapatilhas", "Rasteiras", "Salto Fino", "Salto Block", "Mules", "Tênis", "Botas", "Biquinis", "Roupas"]     
         self.list_materiais = ["Couro", "Camurça", "Nobuck", "PU", "Verniz", "Algodão", "Poliamida", "Suplex"]      
@@ -154,37 +165,48 @@ class JanelaCadastroProdutos(tk.Toplevel):
                                   relief="flat", highlightbackground=self.cor_borda, highlightthickness=1)
         self.ent_venda.grid(row=10, column=1, sticky="ew", ipady=3)
 
-        tk.Label(main_frame, text="FORNECEDOR", bg=self.bg_fundo, fg=self.cor_lbl,
-                 font=("Segoe UI", 8, "bold")).grid(row=11, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        self.ent_forn = criar_campo(main_frame, "FORNECEDOR (opcional)", 11, colspan=2)
+        self.cb_tipo = criar_combo(main_frame, "TIPO*", list(ui_utils.TIPOS_PRODUTO_UI), 13, 0, span=2)
+        self.ent_produto.bind("<KeyRelease>", lambda e: self._atualizar_sku_preview())
 
         # --- Campo Data do Lançamento ---
         tk.Label(main_frame, text="DATA DO LANÇAMENTO", bg=self.bg_fundo, fg=self.cor_lbl, 
-                 font=("Segoe UI", 8, "bold")).grid(row=16, column=0, sticky="w", pady=(3, 0))
+                 font=("Segoe UI", 8, "bold")).grid(row=15, column=0, sticky="w", pady=(3, 0))
         self.ent_data_lancamento = tk.Entry(main_frame, font=("Segoe UI", 10), bg=self.bg_card, fg=self.cor_texto,
                                            relief="flat", highlightbackground=self.cor_borda, highlightthickness=1)
-        self.ent_data_lancamento.grid(row=17, column=0, sticky="ew", ipady=3, padx=(0, 5))
+        self.ent_data_lancamento.grid(row=16, column=0, sticky="ew", ipady=3, padx=(0, 5))
         self.ent_data_lancamento.insert(0, datetime.now().strftime("%d/%m/%Y"))
         aplicar_estilo_foco(self.ent_data_lancamento)
+        ui_utils.anexar_botao_calendario(main_frame, self.ent_data_lancamento, row=16, column=0, sticky="e")
 
         # --- Campo Status do Item ---
         tk.Label(main_frame, text="STATUS DO ITEM*", bg=self.bg_fundo, fg=self.cor_lbl, 
-                 font=("Segoe UI", 8, "bold")).grid(row=16, column=1, sticky="w", pady=(3, 0))
+                 font=("Segoe UI", 8, "bold")).grid(row=15, column=1, sticky="w", pady=(3, 0))
         self.var_status = tk.StringVar(value="Disponível")
         self.opt_status = tk.OptionMenu(main_frame, self.var_status, *self.list_status)
         self.opt_status.config(bg=self.bg_card, fg=self.cor_texto, relief="flat", highlightthickness=1, 
                                 highlightbackground=self.cor_borda, font=("Segoe UI", 10), cursor="hand2")
-        self.opt_status.grid(row=17, column=1, sticky="ew", pady=(1, 0))
+        self.opt_status.grid(row=16, column=1, sticky="ew", pady=(1, 0))
+
+        form_grade = tk.LabelFrame(
+            main_frame, text=" Dados do produto e grade ",
+            bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 9, "bold"),
+            relief="solid", borderwidth=1, padx=8, pady=8,
+        )
+        form_grade.grid(row=17, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        form_grade.columnconfigure(0, weight=1)
+        form_grade.columnconfigure(1, weight=1)
 
         # --- GRADE DE ESTOQUE E FOTO ---
-        tk.Label(main_frame, text="GRADE DE ESTOQUE", bg=self.bg_fundo, fg=self.cor_texto, 
-                 font=("Segoe UI", 9, "bold")).grid(row=18, column=0, sticky="w", pady=(10, 2))
+        tk.Label(form_grade, text="GRADE DE ESTOQUE", bg=self.bg_fundo, fg=self.cor_texto, 
+                 font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=(2, 2))
         
-        tk.Label(main_frame, text="FOTO DO PRODUTO", bg=self.bg_fundo, fg=self.cor_texto, 
-                 font=("Segoe UI", 9, "bold")).grid(row=18, column=1, sticky="w", pady=(10, 2))
+        tk.Label(form_grade, text="FOTO DO PRODUTO", bg=self.bg_fundo, fg=self.cor_texto, 
+                 font=("Segoe UI", 9, "bold")).grid(row=0, column=1, sticky="w", pady=(2, 2))
         
         # Frame para grade e foto lado a lado
-        frame_conteudo = tk.Frame(main_frame, bg=self.bg_fundo)
-        frame_conteudo.grid(row=19, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        frame_conteudo = tk.Frame(form_grade, bg=self.bg_fundo)
+        frame_conteudo.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         frame_conteudo.columnconfigure(0, weight=1)
         frame_conteudo.columnconfigure(1, weight=1)
 
@@ -195,6 +217,8 @@ class JanelaCadastroProdutos(tk.Toplevel):
 
         self.cb_cor = criar_combo(frame_grade, "COR*", self.list_cores, 0, 0, 2)
         self.cb_tam = criar_combo(frame_grade, "TAMANHO*", self.list_tamanhos, 2, 0, 2)
+        self.cb_cor.bind("<<ComboboxSelected>>", lambda e: self._atualizar_sku_preview())
+        self.cb_tam.bind("<<ComboboxSelected>>", lambda e: self._atualizar_sku_preview())
         self.ent_qtd = criar_campo(frame_grade, "QUANTIDADE*", 4, col=0, colspan=1)
         self.lbl_qtd_atual = tk.Label(frame_grade, text="", bg=self.bg_card, fg=self.cor_lbl, font=("Segoe UI", 8), anchor="w")
         self.lbl_qtd_atual.grid(row=6, column=0, columnspan=2, sticky="w", pady=(2, 0))
@@ -213,29 +237,33 @@ class JanelaCadastroProdutos(tk.Toplevel):
 
         # --- Campo SKU (no final, apenas visualização) ---
         tk.Label(main_frame, text="CÓDIGO DO PRODUTO (SKU)", bg=self.bg_fundo, fg=self.cor_lbl, 
-                 font=("Segoe UI", 8, "bold")).grid(row=20, column=0, sticky="w", pady=(10, 0))
+                 font=("Segoe UI", 8, "bold")).grid(row=18, column=0, sticky="w", pady=(10, 0))
         self.ent_sku = tk.Entry(main_frame, font=("Segoe UI", 10, "bold"), bg="#F8FAFC", fg=self.cor_destaque, 
                                relief="flat", highlightbackground=self.cor_borda, highlightthickness=1, state="readonly")
-        self.ent_sku.grid(row=21, column=0, columnspan=2, sticky="ew", ipady=3, pady=(0, 10))
+        self.ent_sku.grid(row=19, column=0, columnspan=2, sticky="ew", ipady=3, pady=(0, 10))
         
-        # --- BOTÕES (Dual Mode e Hover) ---
+        # --- BOTÕES no rodapé (uma linha) ---
         texto_botao = "ATUALIZAR PRODUTO" if self.produto_id else "SALVAR PRODUTO"
         cor_base_acao = self.cor_hover_field if self.produto_id else self.cor_btn_acao
+        frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
+        frame_rodape.grid(row=20, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        frame_rodape.columnconfigure((0, 1, 2), weight=1)
 
-        self.btn_salvar = tk.Button(main_frame, text=texto_botao, bg=cor_base_acao, fg="white", 
-                                    font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", 
-                                    command=self.validar_e_salvar)
-        self.btn_salvar.grid(row=22, column=0, columnspan=2, pady=(10, 0), sticky="ew", ipady=6)
-        
-        self.btn_cancelar = tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_btn_sair, fg="white", 
-                                      font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", 
-                                      command=self.destroy)
-        self.btn_cancelar.grid(row=23, column=0, columnspan=2, pady=(10, 0), sticky="ew", ipady=6)
-
-        self.btn_salvar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
-        self.btn_salvar.bind("<Leave>", lambda e: e.widget.config(bg=cor_base_acao))
-        self.btn_cancelar.bind("<Enter>", lambda e: e.widget.config(bg=self.cor_hover_btn))
-        self.btn_cancelar.bind("<Leave>", lambda e: e.widget.config(bg=self.cor_btn_sair))
+        _pal = ui_utils.get_paleta()
+        self.btn_salvar = ui_utils.criar_botao_rodape(
+            frame_rodape, texto_botao, cor_base_acao, lambda: self.validar_e_salvar(continuar=False), _pal
+        )
+        self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
+        self.btn_continuar = ui_utils.criar_botao_rodape(
+            frame_rodape, "SALVAR E CONTINUAR", self.cor_destaque,
+            lambda: self.validar_e_salvar(continuar=True), _pal,
+        )
+        self.btn_continuar.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+        self.btn_cancelar = ui_utils.criar_botao_rodape(
+            frame_rodape, "FECHAR", self.cor_btn_sair,
+            lambda: self._fechar_com_confirmacao(), _pal,
+        )
+        self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
 
         # --- Menu de contexto (botão direito) ---
         self.menu_contexto = tk.Menu(self, tearoff=0)
@@ -251,26 +279,31 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self.tree_busca.bind("<Button-3>", self.menu_contexto_produto)
 
         self.atualizar_tree_busca()
-        self.pesquisar_fornecedores_produto()
-        if not self.produto_id:  # Só gera SKU automático para novos produtos
+        if not self.produto_id:
             self.gerar_sku_automatico()
 
-    def pesquisar_fornecedores_produto(self, event=None):
-        termo = self.ent_busca_forn.get().strip()
-        self.tree_forn.delete(*self.tree_forn.get_children())
-        for f in database.listar_contatos(tipo='Fornecedor', termo=termo):
-            self.tree_forn.insert("", "end", values=(f[0], f[2]))
+    def _fechar_com_confirmacao(self):
+        if ui_utils.confirmar(self, "Fechar", "Deseja fechar sem salvar as alterações?"):
+            self.destroy()
 
-    def selecionar_fornecedor_produto(self, event=None):
-        sel = self.tree_forn.selection()
-        if not sel:
-            return
-        vals = self.tree_forn.item(sel[0], "values")
-        self.fornecedor_id = vals[0]
-        self.ent_forn.config(state="normal")
-        self.ent_forn.delete(0, tk.END)
-        self.ent_forn.insert(0, vals[1])
-        self.ent_forn.config(state="readonly")
+    def _atualizar_sku_preview(self):
+        if self.produto_id and self._dados_base_edicao:
+            base = self._dados_base_edicao
+            mesma_desc = self.ent_produto.get().strip().lower() == (base[3] or "").lower()
+            mesma_cor = self.cb_cor.get() == base[4]
+            mesmo_tam = str(self.cb_tam.get()) == str(base[5])
+            if mesma_desc and (not mesma_cor or not mesmo_tam):
+                sku = self._gerar_sku_variacao(base[1] or self.ent_sku.get())
+            elif not mesma_desc:
+                sku = self._gerar_sku_novo(self.ent_produto.get().strip(), self.cb_cor.get())
+            else:
+                return
+        else:
+            sku = self._gerar_sku_novo(self.ent_produto.get().strip(), self.cb_cor.get())
+        self.ent_sku.config(state="normal")
+        self.ent_sku.delete(0, tk.END)
+        self.ent_sku.insert(0, sku)
+        self.ent_sku.config(state="readonly")
 
     def calcular_markup(self, event=None):
         try:
@@ -305,8 +338,13 @@ class JanelaCadastroProdutos(tk.Toplevel):
             if dados:
                 self.preencher_dados(dados)
 
-    def validar_e_salvar(self):
+    def validar_e_salvar(self, continuar=False):
+        """Valida campos, persiste produto/variação e opcionalmente lança despesa de compra."""
+        acao = "salvar e continuar com nova variação" if continuar else "salvar este produto"
+        if not ui_utils.confirmar(self, "Confirmar", f"Deseja {acao}?"):
+            return
         try:
+            tipo_bd = ui_utils.tipo_produto_para_bd(self.cb_tipo.get())
             d = {
                 "sku": self.ent_sku.get().strip(),
                 "produto": self.ent_produto.get().strip(),
@@ -314,16 +352,16 @@ class JanelaCadastroProdutos(tk.Toplevel):
                 "tam": self.cb_tam.get(),
                 "custo": self.ent_custo.get().replace(",", "."),
                 "venda": self.ent_venda.get().replace(",", "."),
-                "qtd": int(self.ent_qtd.get().strip()),
+                "qtd": int(self.ent_qtd.get().strip() or "0"),
                 "cat": self.cb_cat.get(), 
                 "mat": self.cb_mat.get(),
                 "forn": self.ent_forn.get().strip(),
-                "forn_id": self.fornecedor_id,
-                "status": self.var_status.get()
+                "status": self.var_status.get(),
+                "tipo": tipo_bd,
             }
 
-            if not d["produto"] or not d["cor"] or not d["custo"] or not d["forn_id"]:
-                messagebox.showwarning("Atenção", "Preencha os campos obrigatórios e selecione um fornecedor cadastrado.", parent=self)
+            if not d["produto"] or not d["cor"] or not d["custo"]:
+                messagebox.showwarning("Atenção", "Preencha descrição, cor e preço de custo.", parent=self)
                 return
             if self.produto_id:
                 if d["qtd"] < 0:
@@ -338,155 +376,132 @@ class JanelaCadastroProdutos(tk.Toplevel):
             if not d["sku"]:
                 d["sku"] = self._gerar_sku_novo(d["produto"], d["cor"])
 
+            foto = getattr(self, "caminho_foto", "") or ""
+
             if self.produto_id:
-                # Lógica de atualização
                 with database.conectar() as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT sku, produto, cor, tamanho, precocusto, precovenda, categoria, material, fornecedor, status_item, quantidade FROM produtos WHERE id = ?", (self.produto_id,))
+                    cursor.execute(
+                        "SELECT sku, produto, cor, tamanho, precocusto, precovenda, quantidade, "
+                        "categoria, material, fornecedor, status_item FROM produtos WHERE id = ?",
+                        (self.produto_id,),
+                    )
                     atual = cursor.fetchone()
 
                 if not atual:
                     messagebox.showerror("Erro", "Produto não encontrado para atualização.", parent=self)
                     return
 
-                # Verificar se descrição do modelo é igual
                 descricao_igual = atual[1].lower() == d["produto"].lower()
-                
-                if descricao_igual:
-                    # Mesmo modelo - verificar se atributos são iguais
-                    atributos_iguais = (
-                        atual[2] == d["cor"] and str(atual[3]) == str(d["tam"]) and
-                        atual[6] == d["cat"] and atual[7] == d["mat"] and atual[8] == d["forn"]
+                atributos_iguais = (
+                    atual[2] == d["cor"] and str(atual[3]) == str(d["tam"])
+                    and atual[7] == d["cat"] and atual[8] == d["mat"]
+                    and (atual[9] or "") == (d["forn"] or "")
+                )
+
+                if descricao_igual and atributos_iguais:
+                    preco_mudou = float(atual[4]) != float(d["custo"]) or float(atual[5]) != float(d["venda"])
+                    status_mudou = atual[10] != d["status"]
+                    qtd_add = d["qtd"]
+                    if not preco_mudou and not status_mudou and qtd_add == 0:
+                        messagebox.showinfo("Info", "Nenhuma alteração detectada.", parent=self)
+                        return
+                    nova_qtde = int(atual[6]) + qtd_add
+                    database.atualizar_produto(
+                        self.produto_id,
+                        precocusto=d["custo"], precovenda=d["venda"], quantidade=nova_qtde,
+                        status_item=d["status"], fornecedor=d["forn"], tipo=d["tipo"],
                     )
-                    
-                    if atributos_iguais:
-                        # Atributos iguais - verificar se preço, status ou quantidade mudaram
-                        preco_mudou = float(atual[4]) != float(d["custo"]) or float(atual[5]) != float(d["venda"])
-                        status_mudou = atual[9] != d["status"]
-                        qtd_add = d["qtd"]
-                        
-                        if not preco_mudou and not status_mudou and qtd_add == 0:
-                            messagebox.showinfo("Info", "Nenhuma alteração detectada.", parent=self)
-                        else:
-                            nova_qtde = atual[10] + qtd_add
-                            database.atualizar_produto(
-                                self.produto_id, 
-                                precocusto=d["custo"], 
-                                precovenda=d["venda"],
-                                quantidade=nova_qtde, 
-                                status_item=d["status"],
-                                fornecedor=d["forn"],
-                                fornecedor_id=d["forn_id"]
-                            )
-                            
-                            if (preco_mudou or qtd_add > 0) and d["qtd"] > 0:
-                                valor_despesa = float(d["custo"]) * qtd_add
-                                database.lancar_despesa(
-                                    f"Compra de {d['produto']} - Reposição de Estoque", 
-                                    valor_despesa, 
-                                    "Compra Mercadoria", 
-                                    self.ent_data_lancamento.get(),
-                                    1
-                                )
-                            
-                            messagebox.showinfo("Sucesso", "Atualização realizada com sucesso.", parent=self)
-                    else:
-                        # Atributos diferentes - gerar novo SKU
-                        novo_sku = self._gerar_sku_variacao(d["sku"])
-                        criado = database.cadastrar_produto(
-                            novo_sku, 'Calçados', d["produto"], d["cor"], d["tam"],
-                            d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"],
-                            getattr(self, 'caminho_foto', ''), fornecedor_id=d["forn_id"]
-                        )
-                        if not criado:
-                            messagebox.showerror("Erro", "Falha ao cadastrar nova variação do produto.", parent=self)
-                            return
-                        
-                        # Lançar despesa para nova variação
-                        valor_despesa = float(d["custo"]) * d["qtd"]
+                    if qtd_add > 0:
                         database.lancar_despesa(
-                            f"Compra de {d['produto']} - Nova Variação", 
-                            valor_despesa, 
-                            "Compra Mercadoria", 
-                            self.ent_data_lancamento.get(),
-                            1
+                            f"Compra de {d['produto']} - Reposição",
+                            float(d["custo"]) * qtd_add, "Compra Mercadoria",
+                            self.ent_data_lancamento.get(), 1,
                         )
-                        
-                        messagebox.showinfo("Sucesso", "Nova variação cadastrada com sucesso.", parent=self)
+                    messagebox.showinfo("Sucesso", "Atualização realizada com sucesso.", parent=self)
                 else:
-                    # Descrição diferente - sempre novo SKU
-                    novo_sku = self._gerar_sku_novo(d["produto"], d["cor"])
+                    novo_sku = self._gerar_sku_variacao(atual[0]) if descricao_igual else self._gerar_sku_novo(d["produto"], d["cor"])
+                    if d["qtd"] <= 0:
+                        messagebox.showwarning("Atenção", "Informe quantidade para a nova variação.", parent=self)
+                        return
                     criado = database.cadastrar_produto(
-                        novo_sku, 'Calçados', d["produto"], d["cor"], d["tam"],
-                        d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"],
-                        getattr(self, 'caminho_foto', ''), fornecedor_id=d["forn_id"]
+                        novo_sku, d["tipo"], d["produto"], d["cor"], d["tam"],
+                        d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"], foto,
                     )
                     if not criado:
-                        messagebox.showerror("Erro", "Falha ao cadastrar novo produto.", parent=self)
+                        messagebox.showerror("Erro", "Falha ao cadastrar nova variação.", parent=self)
                         return
-                    
-                    # Lançar despesa
-                    valor_despesa = float(d["custo"]) * d["qtd"]
                     database.lancar_despesa(
-                        f"Compra de {d['produto']} - Novo Produto", 
-                        valor_despesa, 
-                        "Compra Mercadoria", 
-                        self.ent_data_lancamento.get(),
-                        1
+                        f"Compra de {d['produto']} - Nova Variação",
+                        float(d["custo"]) * d["qtd"], "Compra Mercadoria",
+                        self.ent_data_lancamento.get(), 1,
                     )
-                    
-                    messagebox.showinfo("Sucesso", "Novo produto cadastrado com sucesso.", parent=self)
+                    messagebox.showinfo("Sucesso", "Nova variação cadastrada com sucesso.", parent=self)
             else:
-                # Novo produto
                 criado = database.cadastrar_produto(
-                    d["sku"], 'Calçados', d["produto"], d["cor"], d["tam"], 
-                    d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"],
-                    getattr(self, 'caminho_foto', ''), fornecedor_id=d["forn_id"]
+                    d["sku"], d["tipo"], d["produto"], d["cor"], d["tam"],
+                    d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"], foto,
                 )
                 if not criado:
-                    messagebox.showerror("Erro", "Falha ao cadastrar produto.", parent=self)
+                    messagebox.showerror("Erro", "Falha ao cadastrar produto (SKU pode já existir).", parent=self)
                     return
-                
-                # Lançar despesa
-                valor_despesa = float(d["custo"]) * d["qtd"]
                 database.lancar_despesa(
-                    f"Compra de {d['produto']} - Novo Produto", 
-                    valor_despesa, 
-                    "Compra Mercadoria", 
-                    self.ent_data_lancamento.get(),
-                    1
+                    f"Compra de {d['produto']} - Novo Produto",
+                    float(d["custo"]) * d["qtd"], "Compra Mercadoria",
+                    self.ent_data_lancamento.get(), 1,
                 )
-                
                 messagebox.showinfo("Sucesso", "Produto cadastrado com sucesso.", parent=self)
 
             if hasattr(self.master, "exibir_produtos"):
                 self.master.exibir_produtos()
             if hasattr(self.master, "exibir_financeiro"):
                 self.master.exibir_financeiro()
-            self.destroy()
+
+            if continuar:
+                self._preparar_nova_variacao(d)
+            else:
+                self.destroy()
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao salvar: {e}", parent=self)
 
+    def _preparar_nova_variacao(self, d):
+        """Mantém dados do modelo e limpa grade para nova cor/tamanho/qtd."""
+        self.produto_id = None
+        self._dados_base_edicao = None
+        self.ent_qtd.delete(0, tk.END)
+        self.ent_qtd.insert(0, "")
+        self.lbl_qtd_atual.config(text="Informe a quantidade da nova variação")
+        self._atualizar_sku_preview()
+        self.btn_salvar.config(text="SALVAR PRODUTO", bg=self.cor_btn_acao)
+        self.btn_continuar.config(bg=self.cor_destaque)
+
     def preencher_dados(self, d):
+        """d = SELECT * FROM produtos."""
         self.produto_id = d[0]
+        self._dados_base_edicao = d
         self.ent_sku.config(state="normal")
-        self.ent_sku.delete(0, tk.END); self.ent_sku.insert(0, d[1] if d[1] else "")
+        self.ent_sku.delete(0, tk.END)
+        self.ent_sku.insert(0, d[1] if d[1] else "")
         self.ent_sku.config(state="readonly")
-        self.ent_produto.delete(0, tk.END); self.ent_produto.insert(0, d[3])
-        self.cb_cor.set(d[4]); self.cb_tam.set(str(d[5]))
-        self.ent_custo.delete(0, tk.END); self.ent_custo.insert(0, f"{d[6]:.2f}")
-        self.ent_venda.delete(0, tk.END); self.ent_venda.insert(0, f"{d[7]:.2f}")
+        self.ent_produto.delete(0, tk.END)
+        self.ent_produto.insert(0, d[3] or "")
+        if len(d) > 2 and d[2]:
+            self.cb_tipo.set(ui_utils.tipo_produto_para_ui(d[2]))
+        self.cb_cor.set(d[4])
+        self.cb_tam.set(str(d[5]))
+        self.ent_custo.delete(0, tk.END)
+        self.ent_custo.insert(0, f"{float(d[6] or 0):.2f}")
+        self.ent_venda.delete(0, tk.END)
+        self.ent_venda.insert(0, f"{float(d[7] or 0):.2f}")
         quantidade_atual = d[8]
         self.ent_qtd.delete(0, tk.END)
         self.ent_qtd.insert(0, "0")
         self.lbl_qtd_atual.config(text=f"Quantidade atual em estoque: {quantidade_atual}")
-        self.cb_cat.set(d[9]); self.cb_mat.set(d[10])
-        self.fornecedor_id = d[15] if len(d) > 15 else None
-        self.ent_forn.config(state="normal")
+        self.cb_cat.set(d[9] if d[9] in self.list_categorias else self.list_categorias[0])
+        self.cb_mat.set(d[10] if d[10] in self.list_materiais else self.list_materiais[0])
         self.ent_forn.delete(0, tk.END)
         self.ent_forn.insert(0, d[11] if d[11] else "")
-        self.ent_forn.config(state="readonly")
-        self.var_status.set(d[12])
+        self.var_status.set(d[12] if d[12] in self.list_status else "Disponível")
         self.caminho_foto = d[13] if len(d) > 13 else ""
         if self.caminho_foto:
             self.exibir_foto_preview()
@@ -498,10 +513,16 @@ class JanelaCadastroProdutos(tk.Toplevel):
             self.lbl_foto.config(text="📷\n\nClique para\nadicionar foto", image="", compound="top")
             return
         try:
-            img = Image.open(self.caminho_foto)
-            img = img.resize((150, 150), Image.Resampling.LANCZOS)
-            self.foto_tk = tk.PhotoImage(img)
-            self.lbl_foto.config(image=self.foto_tk, text="", compound="center")
+            if Image and ImageTk:
+                img = Image.open(self.caminho_foto)
+                img = img.resize((150, 150), Image.Resampling.LANCZOS)
+                self.foto_tk = ImageTk.PhotoImage(img)
+            else:
+                self.foto_tk = ui_utils.carregar_miniatura_foto(self.caminho_foto, (150, 150))
+            if self.foto_tk:
+                self.lbl_foto.config(image=self.foto_tk, text="", compound="center")
+            else:
+                raise ValueError("formato não suportado")
         except Exception as e:
             self.lbl_foto.config(text=f"Erro ao carregar\nfoto: {str(e)[:20]}", image="")
 
@@ -612,7 +633,6 @@ class JanelaCadastroProdutos(tk.Toplevel):
                 caminho_destino = os.path.join("images", nome_arquivo)
                 
                 # Copiar arquivo para pasta images
-                import shutil
                 shutil.copy2(caminho_origem, caminho_destino)
                 
                 # Atualizar campo foto (se existir)
@@ -749,17 +769,17 @@ class VisualizarProduto(tk.Toplevel):
         # Informações do produto
         info_text = f"""
 SKU: {dados_produto[1] or 'N/A'}
-Produto: {dados_produto[2]}
-Cor: {dados_produto[3]}
-Tamanho: {dados_produto[4]}
-Preço de Custo: R$ {dados_produto[5]:.2f}
-Preço de Venda: R$ {dados_produto[6]:.2f}
-Quantidade em Estoque: {dados_produto[7]}
-Categoria: {dados_produto[8] or 'N/A'}
-Material: {dados_produto[9] or 'N/A'}
-Fornecedor: {dados_produto[10] or 'N/A'}
-Status: {dados_produto[11]}
-Última Atualização: {dados_produto[12] if len(dados_produto) > 12 else 'N/A'}
+Tipo: {dados_produto[2] or 'N/A'}
+Produto: {dados_produto[3]}
+Cor: {dados_produto[4]}
+Tamanho: {dados_produto[5]}
+Preço de Custo: R$ {float(dados_produto[6] or 0):.2f}
+Preço de Venda: R$ {float(dados_produto[7] or 0):.2f}
+Quantidade em Estoque: {dados_produto[8]}
+Categoria: {dados_produto[9] or 'N/A'}
+Material: {dados_produto[10] or 'N/A'}
+Fornecedor: {dados_produto[11] or 'N/A'}
+Status: {dados_produto[12]}
         """
         
         lbl_info = tk.Label(main_frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto,

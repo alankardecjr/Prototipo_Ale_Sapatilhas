@@ -16,8 +16,13 @@ import ui_utils
 
 
 class JanelaCadastroClientes(tk.Toplevel):
-    """Ficha cadastral de pessoa física (cliente ou fornecedor)."""
+    """
+    Ficha unificada de contato (Cliente ou Fornecedor) para CRM e financeiro.
+
+    Gerar venda salva o contato e abre o PDV com os dados carregados.
+    """
     def __init__(self, master, dados_cliente=None):
+        """Inicializa formulário; preenche campos se dados_cliente (SELECT *) for passado."""
         super().__init__(master)
 
         # --- Paleta de cores ---
@@ -41,7 +46,7 @@ class JanelaCadastroClientes(tk.Toplevel):
 
         self._manter_em_primeiro_plano()
         
-        ui_utils.calcular_dimensoes_janela(self, largura_desejada=650, altura_desejada=700)
+        ui_utils.calcular_dimensoes_janela(self, largura_desejada=ui_utils.LARGURA_MODULO_PADRAO, altura_desejada=720)
 
         self.cliente_id = dados_cliente[0] if dados_cliente else None
         self.texto_btn = "ATUALIZAR CADASTRO" if self.cliente_id else "SALVAR CADASTRO"
@@ -85,67 +90,64 @@ class JanelaCadastroClientes(tk.Toplevel):
         return btn
 
     def criar_widgets(self):
-        main_frame = tk.Frame(self, bg=self.bg_fundo, padx=25, pady=10)
+        main_frame = tk.Frame(self, bg=self.bg_fundo, padx=20, pady=10)
         main_frame.pack(fill="both", expand=True)
         main_frame.columnconfigure((0, 1), weight=1)
 
-        # --- Título ---
-        tk.Label(main_frame, text="Ficha Cadastral do Contato", bg=self.bg_fundo, 
-                 fg=self.cor_texto, font=("Segoe UI", 13, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        tk.Label(main_frame, text="Ficha Cadastral do Contato", bg=self.bg_fundo,
+                 fg=self.cor_texto, font=("Segoe UI", 13, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-        tk.Label(main_frame, text="TIPO DE CONTATO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=1, column=0, sticky="w", pady=(3, 0))
+        form = tk.LabelFrame(main_frame, text=" Dados do contato ", bg=self.bg_fundo, fg=self.cor_destaque,
+                             font=("Segoe UI", 9, "bold"), relief="solid", borderwidth=1, padx=10, pady=8)
+        form.grid(row=1, column=0, columnspan=2, sticky="ew")
+        form.columnconfigure((0, 1), weight=1)
+
+        tk.Label(form, text="TIPO DE CONTATO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=0, column=0, sticky="w", pady=(3, 0))
         self.var_tipo = tk.StringVar(value="Cliente")
-        self.opt_tipo = tk.OptionMenu(main_frame, self.var_tipo, "Cliente", "Fornecedor")
+        self.opt_tipo = tk.OptionMenu(form, self.var_tipo, "Cliente", "Fornecedor")
         self.opt_tipo.config(bg=self.bg_card, fg=self.cor_texto, relief="flat", font=("Segoe UI", 10), cursor="hand2")
-        self.opt_tipo.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        self.opt_tipo.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
-        # --- Campos de Entrada ---
-        self.ent_nome   = self._criar_campo(main_frame, "NOME COMPLETO*", 3)
-        self.ent_cpf    = self._criar_campo(main_frame, "CPF/ CNPJ (APENAS NÚMEROS)*", 5)
-        self.ent_tel    = self._criar_campo(main_frame, "TELEFONE / WHATSAPP*", 7, col=0, colspan=1)
-        self.ent_email  = self._criar_campo(main_frame, "E-MAIL", 7, col=1, colspan=1)
-        self.ent_niver  = self._criar_campo(main_frame, "ANIVERSÁRIO (DD/MM)", 9, col=0, colspan=1)
-        self.ent_tam    = self._criar_campo(main_frame, "TAM. CALÇADO", 9, col=1, colspan=1)
-        self.ent_logra  = self._criar_campo(main_frame, "ENDEREÇO COMPLETO", 11)
-        self.ent_bairro = self._criar_campo(main_frame, "BAIRRO", 13, col=0, colspan=1)
-        self.ent_cidade = self._criar_campo(main_frame, "CIDADE", 13, col=1, colspan=1)
-        self.ent_cep    = self._criar_campo(main_frame, "CEP", 15, col=0, colspan=1)       
-        
-        # Campo Limite (Manual por ser específico)
-        tk.Label(main_frame, text="LIMITE DE CRÉDITO", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=15, column=1, sticky="w", pady=(4,0))
-        self.ent_limite = tk.Entry(main_frame, font=("Segoe UI", 10), bg=self.bg_card, fg=self.cor_texto, relief="flat", highlightthickness=1, highlightbackground=self.cor_borda)
-        self.ent_limite.grid(row=16, column=1, sticky="ew", ipady=2)
+        self.ent_nome   = self._criar_campo(form, "NOME COMPLETO*", 2)
+        self.ent_cpf    = self._criar_campo(form, "CPF/ CNPJ (APENAS NÚMEROS)*", 4)
+        self.ent_tel    = self._criar_campo(form, "TELEFONE / WHATSAPP*", 6, col=0, colspan=1)
+        self.ent_email  = self._criar_campo(form, "E-MAIL", 6, col=1, colspan=1)
+        self.ent_niver  = self._criar_campo(form, "ANIVERSÁRIO (DD/MM/AAAA)", 8, col=0, colspan=1)
+        ui_utils.anexar_botao_calendario(form, self.ent_niver, row=9, column=0, sticky="e")
+        self.ent_tam    = self._criar_campo(form, "TAM. CALÇADO", 8, col=1, colspan=1)
+        self.ent_logra  = self._criar_campo(form, "ENDEREÇO COMPLETO", 10)
+        self.ent_bairro = self._criar_campo(form, "BAIRRO", 12, col=0, colspan=1)
+        self.ent_cidade = self._criar_campo(form, "CIDADE", 12, col=1, colspan=1)
+        self.ent_cep    = self._criar_campo(form, "CEP", 14, col=0, colspan=1)
+
+        tk.Label(form, text="LIMITE DE CRÉDITO", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=14, column=1, sticky="w", pady=(4, 0))
+        self.ent_limite = tk.Entry(form, font=("Segoe UI", 10), bg=self.bg_card, fg=self.cor_texto, relief="flat", highlightthickness=1, highlightbackground=self.cor_borda)
+        self.ent_limite.grid(row=15, column=1, sticky="ew", ipady=2)
         self.ent_limite.insert(0, "0.00")
         self._aplicar_estilo_foco(self.ent_limite)
 
-        self.ent_obs = self._criar_campo(main_frame, "OBSERVAÇÕES", 17)
+        self.ent_obs = self._criar_campo(form, "OBSERVAÇÕES", 16)
 
-        # Status
-        tk.Label(main_frame, text="CLASSIFICAÇÃO", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=19, column=0, sticky="w", pady=(8, 0))
+        tk.Label(form, text="CLASSIFICAÇÃO", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=18, column=0, sticky="w", pady=(8, 0))
         self.var_status = tk.StringVar(value="Ativo")
-        self.opt_status = tk.OptionMenu(main_frame, self.var_status, "Vip", "Ativo", "Inativo", "Bloqueado")
+        self.opt_status = tk.OptionMenu(form, self.var_status, "Vip", "Ativo", "Inativo", "Bloqueado")
         self.opt_status.config(bg=self.bg_card, fg=self.cor_texto, relief="flat", highlightthickness=1, highlightbackground=self.cor_borda, font=("Segoe UI", 10), cursor="hand2")
-        self.opt_status.grid(row=20, column=0, columnspan=2, sticky="ew", pady=(2, 15))
+        self.opt_status.grid(row=19, column=0, columnspan=2, sticky="ew", pady=(2, 4))
 
-        # --- SEÇÃO DE BOTÕES (Refatorada) ---
-        # Frame Superior: Salvar e Gerar Venda
-        frame_botoes_sup = tk.Frame(main_frame, bg=self.bg_fundo)
-        frame_botoes_sup.grid(row=21, column=0, columnspan=2, sticky="ew")
-        frame_botoes_sup.columnconfigure((0, 1), weight=1)
+        _pal = ui_utils.get_paleta()
+        frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
+        frame_rodape.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        frame_rodape.columnconfigure((0, 1, 2), weight=1)
+        self.btn_salvar = ui_utils.criar_botao_rodape(frame_rodape, self.texto_btn, self.cor_base_acao, self.salvar_dados, _pal)
+        self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
+        self.btn_gerar_venda = ui_utils.criar_botao_rodape(frame_rodape, "🛒 GERAR VENDA", self.cor_destaque, self.gerar_venda, _pal)
+        self.btn_gerar_venda.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+        self.btn_cancelar = ui_utils.criar_botao_rodape(frame_rodape, "FECHAR", self.cor_btn_sair, self._fechar, _pal)
+        self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
 
-        self.btn_salvar = self._criar_botao_padrao(frame_botoes_sup, self.texto_btn, self.cor_base_acao, 
-                                                   self.salvar_dados, 0, 0, padx=(0, 5))
-        
-        self.btn_gerar_venda = self._criar_botao_padrao(frame_botoes_sup, "🛒 GERAR VENDA", self.cor_destaque, 
-                                                        self.gerar_venda, 0, 1, padx=(5, 0))
-
-        # Frame Inferior: Cancelar (Ocupa tudo embaixo)
-        frame_botoes_inf = tk.Frame(main_frame, bg=self.bg_fundo)
-        frame_botoes_inf.grid(row=22, column=0, columnspan=2, pady=(10, 0), sticky="ew")
-        frame_botoes_inf.columnconfigure(0, weight=1)
-
-        self.btn_cancelar = self._criar_botao_padrao(frame_botoes_inf, "FECHAR JANELA", self.cor_btn_sair, 
-                                                     self.destroy, 0, 0)
+    def _fechar(self):
+        if ui_utils.confirmar(self, "Fechar", "Deseja fechar sem salvar?"):
+            self.destroy()
 
     def get_dados_campos(self):
         """Retorna um dicionário com os dados da tela limpos"""
@@ -167,6 +169,8 @@ class JanelaCadastroClientes(tk.Toplevel):
         }
 
     def salvar_dados(self):
+        if not ui_utils.confirmar(self, "Confirmar", "Deseja salvar este cadastro?"):
+            return
         d = self.get_dados_campos()
         if not d["nome"] or not d["cpf"] or not d["tel"]:
             messagebox.showwarning("Atenção", "Preencha os campos obrigatórios (Nome, CPF e Telefone).", parent=self)
@@ -199,13 +203,15 @@ class JanelaCadastroClientes(tk.Toplevel):
             messagebox.showerror("Erro", f"Falha ao salvar: {e}", parent=self)
 
     def gerar_venda(self):
+        if not ui_utils.confirmar(self, "Gerar venda", "Salvar contato e abrir o PDV com estes dados?"):
+            return
         d = self.get_dados_campos()
         if not d["nome"]:
             messagebox.showwarning("Atenção", "Preencha pelo menos o nome para gerar venda.", parent=self)
             return
+        d["tipo"] = "Cliente"
 
         try:
-            # Lógica para salvar antes de vender
             if self.cliente_id:
                 dados_atualizacao = {
                     'nome': d['nome'], 'cpf': d['cpf'], 'telefone': d['tel'], 'email': d['email'],
