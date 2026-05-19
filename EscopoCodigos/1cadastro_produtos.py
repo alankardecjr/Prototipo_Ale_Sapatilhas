@@ -253,16 +253,32 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self.menu_contexto.add_command(label="✓ Disponível", command=self.disponibilizar_produto_menu)
         self.menu_contexto.add_command(label="✗ Indisponível", command=self.indisponibilizar_produto_menu)
         self.menu_contexto.add_command(label="⭐ Promocional", command=self.promocional_produto_menu)
-
+    
+        # Bindings para treeview
         self.tree_busca.bind("<Double-1>", self.editar_produto_duplo_clique)
         self.tree_busca.bind("<Button-3>", self.menu_contexto_produto)
 
-        try:
-            self.atualizar_tree_busca()
-            if not self.produto_id:  
-                self.gerar_sku_automatico()
-        except:
-            pass
+        self.atualizar_tree_busca()
+        self.pesquisar_fornecedores_produto()
+        if not self.produto_id:  # Só gera SKU automático para novos produtos
+            self.gerar_sku_automatico()
+
+    def pesquisar_fornecedores_produto(self, event=None):
+        termo = self.ent_busca_forn.get().strip()
+        self.tree_forn.delete(*self.tree_forn.get_children())
+        for f in database.listar_contatos(tipo='Fornecedor', termo=termo):
+            self.tree_forn.insert("", "end", values=(f[0], f[2]))
+
+    def selecionar_fornecedor_produto(self, event=None):
+        sel = self.tree_forn.selection()
+        if not sel:
+            return
+        vals = self.tree_forn.item(sel[0], "values")
+        self.fornecedor_id = vals[0]
+        self.ent_forn.config(state="normal")
+        self.ent_forn.delete(0, tk.END)
+        self.ent_forn.insert(0, vals[1])
+        self.ent_forn.config(state="readonly")
 
     # --- Manutenção dos demais métodos internos sem alteração de escopo técnico ---
     def calcular_markup(self, event=None):
@@ -299,8 +315,166 @@ class JanelaCadastroProdutos(tk.Toplevel):
                 self.preencher_dados(dados)
 
     def validar_e_salvar(self):
-        # Mantém sua estrutura de validação original ativa intacta
-        self.destroy()
+        try:
+            d = {
+                "sku": self.ent_sku.get().strip(),
+                "produto": self.ent_produto.get().strip(),
+                "cor": self.cb_cor.get(), 
+                "tam": self.cb_tam.get(),
+                "custo": self.ent_custo.get().replace(",", "."),
+                "venda": self.ent_venda.get().replace(",", "."),
+                "qtd": int(self.ent_qtd.get().strip()),
+                "cat": self.cb_cat.get(), 
+                "mat": self.cb_mat.get(),
+                "forn": self.ent_forn.get().strip(),
+                "forn_id": self.fornecedor_id,
+                "status": self.var_status.get()
+            }
+
+            if not d["produto"] or not d["cor"] or not d["custo"] or not d["forn_id"]:
+                messagebox.showwarning("Atenção", "Preencha os campos obrigatórios e selecione um fornecedor cadastrado.", parent=self)
+                return
+            if self.produto_id:
+                if d["qtd"] < 0:
+                    messagebox.showwarning("Atenção", "Quantidade deve ser zero ou positiva.", parent=self)
+                    return
+            else:
+                if d["qtd"] <= 0:
+                    messagebox.showwarning("Atenção", "Quantidade deve ser maior que zero para cadastrar um novo produto.", parent=self)
+                    return
+
+            # Gerar SKU se necessário
+            if not d["sku"]:
+                d["sku"] = self._gerar_sku_novo(d["produto"], d["cor"])
+
+            if self.produto_id:
+                # Lógica de atualização
+                with database.conectar() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT sku, produto, cor, tamanho, precocusto, precovenda, categoria, material, fornecedor, status_item, quantidade FROM produtos WHERE id = ?", (self.produto_id,))
+                    atual = cursor.fetchone()
+
+                if not atual:
+                    messagebox.showerror("Erro", "Produto não encontrado para atualização.", parent=self)
+                    return
+
+                # Verificar se descrição do modelo é igual
+                descricao_igual = atual[1].lower() == d["produto"].lower()
+                
+                if descricao_igual:
+                    # Mesmo modelo - verificar se atributos são iguais
+                    atributos_iguais = (
+                        atual[2] == d["cor"] and str(atual[3]) == str(d["tam"]) and
+                        atual[6] == d["cat"] and atual[7] == d["mat"] and atual[8] == d["forn"]
+                    )
+                    
+                    if atributos_iguais:
+                        # Atributos iguais - verificar se preço, status ou quantidade mudaram
+                        preco_mudou = float(atual[4]) != float(d["custo"]) or float(atual[5]) != float(d["venda"])
+                        status_mudou = atual[9] != d["status"]
+                        qtd_add = d["qtd"]
+                        
+                        if not preco_mudou and not status_mudou and qtd_add == 0:
+                            messagebox.showinfo("Info", "Nenhuma alteração detectada.", parent=self)
+                        else:
+                            nova_qtde = atual[10] + qtd_add
+                            database.atualizar_produto(
+                                self.produto_id, 
+                                precocusto=d["custo"], 
+                                precovenda=d["venda"],
+                                quantidade=nova_qtde, 
+                                status_item=d["status"],
+                                fornecedor=d["forn"],
+                                fornecedor_id=d["forn_id"]
+                            )
+                            
+                            if (preco_mudou or qtd_add > 0) and d["qtd"] > 0:
+                                valor_despesa = float(d["custo"]) * qtd_add
+                                database.lancar_despesa(
+                                    f"Compra de {d['produto']} - Reposição de Estoque", 
+                                    valor_despesa, 
+                                    "Compra Mercadoria", 
+                                    self.ent_data_lancamento.get(),
+                                    1
+                                )
+                            
+                            messagebox.showinfo("Sucesso", "Atualização realizada com sucesso.", parent=self)
+                    else:
+                        # Atributos diferentes - gerar novo SKU
+                        novo_sku = self._gerar_sku_variacao(d["sku"])
+                        criado = database.cadastrar_produto(
+                            novo_sku, 'Calçados', d["produto"], d["cor"], d["tam"],
+                            d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"],
+                            getattr(self, 'caminho_foto', ''), fornecedor_id=d["forn_id"]
+                        )
+                        if not criado:
+                            messagebox.showerror("Erro", "Falha ao cadastrar nova variação do produto.", parent=self)
+                            return
+                        
+                        # Lançar despesa para nova variação
+                        valor_despesa = float(d["custo"]) * d["qtd"]
+                        database.lancar_despesa(
+                            f"Compra de {d['produto']} - Nova Variação", 
+                            valor_despesa, 
+                            "Compra Mercadoria", 
+                            self.ent_data_lancamento.get(),
+                            1
+                        )
+                        
+                        messagebox.showinfo("Sucesso", "Nova variação cadastrada com sucesso.", parent=self)
+                else:
+                    # Descrição diferente - sempre novo SKU
+                    novo_sku = self._gerar_sku_novo(d["produto"], d["cor"])
+                    criado = database.cadastrar_produto(
+                        novo_sku, 'Calçados', d["produto"], d["cor"], d["tam"],
+                        d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"],
+                        getattr(self, 'caminho_foto', ''), fornecedor_id=d["forn_id"]
+                    )
+                    if not criado:
+                        messagebox.showerror("Erro", "Falha ao cadastrar novo produto.", parent=self)
+                        return
+                    
+                    # Lançar despesa
+                    valor_despesa = float(d["custo"]) * d["qtd"]
+                    database.lancar_despesa(
+                        f"Compra de {d['produto']} - Novo Produto", 
+                        valor_despesa, 
+                        "Compra Mercadoria", 
+                        self.ent_data_lancamento.get(),
+                        1
+                    )
+                    
+                    messagebox.showinfo("Sucesso", "Novo produto cadastrado com sucesso.", parent=self)
+            else:
+                # Novo produto
+                criado = database.cadastrar_produto(
+                    d["sku"], 'Calçados', d["produto"], d["cor"], d["tam"], 
+                    d["custo"], d["venda"], d["qtd"], d["cat"], d["mat"], d["forn"],
+                    getattr(self, 'caminho_foto', ''), fornecedor_id=d["forn_id"]
+                )
+                if not criado:
+                    messagebox.showerror("Erro", "Falha ao cadastrar produto.", parent=self)
+                    return
+                
+                # Lançar despesa
+                valor_despesa = float(d["custo"]) * d["qtd"]
+                database.lancar_despesa(
+                    f"Compra de {d['produto']} - Novo Produto", 
+                    valor_despesa, 
+                    "Compra Mercadoria", 
+                    self.ent_data_lancamento.get(),
+                    1
+                )
+                
+                messagebox.showinfo("Sucesso", "Produto cadastrado com sucesso.", parent=self)
+
+            if hasattr(self.master, "exibir_produtos"):
+                self.master.exibir_produtos()
+            if hasattr(self.master, "exibir_financeiro"):
+                self.master.exibir_financeiro()
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao salvar: {e}", parent=self)
 
     def preencher_dados(self, d):
         self.produto_id = d[0]
@@ -318,12 +492,139 @@ class JanelaCadastroProdutos(tk.Toplevel):
         self.var_status.set(d[12])
 
     def menu_contexto_foto(self, event):
+        """Menu de contexto para a foto"""
         menu = tk.Menu(self, tearoff=0)
         menu.add_command(label="Nova foto", command=self.selecionar_foto)
+        menu.add_command(label="Excluir foto", command=self.excluir_foto)
+        menu.add_separator()
+        menu.add_command(label="Sair", command=lambda: None)
         menu.post(event.x_root, event.y_root)
 
-    def selecionar_foto(self, event=None):
-        filedialog.askopenfilename(parent=self)
+    def gerar_sku_automatico(self):
+        """Gera SKU automaticamente baseado nos dados do produto"""
+        produto = self.ent_produto.get().strip()
+        cor = self.cb_cor.get()
+        
+        if produto and cor:
+            sku = self._gerar_sku_novo(produto, cor)
+            self.ent_sku.config(state="normal")
+            self.ent_sku.delete(0, tk.END)
+            self.ent_sku.insert(0, sku)
+            self.ent_sku.config(state="readonly")
+
+    def _gerar_sku_novo(self, produto, cor):
+        """Gera novo SKU baseado na descrição e cor"""
+        # Três primeiras letras de cada palavra da descrição
+        palavras = produto.split()
+        parte_produto = ''.join(palavra[:3].upper() for palavra in palavras)
+        
+        # Três primeiras letras da cor
+        parte_cor = cor[:3].upper()
+        
+        # Gerar sequência numérica única
+        sequencia = self._gerar_sequencia_numerica()
+        
+        return f"{parte_produto}{sequencia}{parte_cor}"
+
+    def _gerar_sequencia_numerica(self):
+        """Gera uma sequência de 4 números únicos"""
+        with database.conectar() as conn:
+            cursor = conn.cursor()
+            # Encontrar o maior número usado em SKUs existentes
+            cursor.execute("SELECT sku FROM produtos")
+            skus_existentes = cursor.fetchall()
+            
+            max_num = 0
+            for sku_row in skus_existentes:
+                sku = sku_row[0]
+                # Verificar se o SKU segue o padrão novo (letras + 4 números + letras)
+                if len(sku) >= 7 and sku[:-7].isalpha() and sku[-3:].isalpha() and sku[-7:-3].isdigit():
+                    parte_numerica = sku[-7:-3]
+                    if parte_numerica.isdigit():
+                        max_num = max(max_num, int(parte_numerica))
+            
+            return f"{max_num + 1:04d}"
+
+    def _gerar_sku_variacao(self, sku_base):
+        """Gera um novo SKU único quando atributos mudam mas o produto é o mesmo."""
+        # Para variações, manter a base do produto e cor, mas incrementar a sequência
+        if len(sku_base) >= 7:
+            parte_produto = sku_base[:-7]  # tudo menos os últimos 7 caracteres
+            parte_cor = sku_base[-3:]      # últimos 3 caracteres (cor)
+            parte_numerica = sku_base[-7:-3]  # 4 dígitos do meio
+            
+            if parte_numerica.isdigit():
+                novo_num = int(parte_numerica) + 1
+                novo_sku = f"{parte_produto}{novo_num:04d}{parte_cor}"
+                
+                # Verificar se já existe
+                with database.conectar() as conn:
+                    cursor = conn.cursor()
+                    while cursor.execute("SELECT 1 FROM produtos WHERE sku = ?", (novo_sku,)).fetchone():
+                        novo_num += 1
+                        novo_sku = f"{parte_produto}{novo_num:04d}{parte_cor}"
+                
+                return novo_sku
+        
+        # Fallback: gerar completamente novo
+        produto = self.ent_produto.get().strip()
+        cor = self.cb_cor.get()
+        return self._gerar_sku_novo(produto, cor)
+
+    def selecionar_foto(self, event):
+        """Selecionar foto da galeria e copiar para pasta images"""
+        # Abrir diálogo para selecionar arquivo
+        caminho_origem = filedialog.askopenfilename(
+            parent=self,
+            title="Selecionar Foto do Produto",
+            filetypes=[("Imagens", "*.jpg *.jpeg *.png *.gif *.bmp"), ("Todos os arquivos", "*.*")]
+        )
+        
+        if caminho_origem:
+            try:
+                # Criar pasta images se não existir
+                os.makedirs("images", exist_ok=True)
+                
+                # Gerar nome único para a foto
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                nome_arquivo = f"produto_{timestamp}.jpg"
+                caminho_destino = os.path.join("images", nome_arquivo)
+                
+                # Copiar arquivo para pasta images
+                import shutil
+                shutil.copy2(caminho_origem, caminho_destino)
+                
+                # Atualizar campo foto (se existir)
+                if hasattr(self, 'caminho_foto'):
+                    self.caminho_foto = caminho_destino
+                
+                # Atualizar label para mostrar preview
+                self.lbl_foto.config(text=f"📷\n\nFoto selecionada:\n{nome_arquivo}", fg=self.cor_destaque)
+                
+                messagebox.showinfo("Sucesso", f"Foto '{nome_arquivo}' adicionada com sucesso!", parent=self)
+                
+            except Exception as e:
+                messagebox.showerror("Erro", f"Falha ao copiar foto: {str(e)}", parent=self)
+
+    def exibir_foto_preview(self):
+        """Carrega e exibe a foto do produto no Label"""
+        if not self.caminho_foto or not os.path.exists(self.caminho_foto):
+            self.lbl_foto.config(text="📷\n\nClique para\nadicionar foto", image="", compound="top")
+            return
+        try:
+            img = Image.open(self.caminho_foto)
+            img = img.resize((150, 150), Image.Resampling.LANCZOS)
+            self.foto_tk = tk.PhotoImage(img)
+            self.lbl_foto.config(image=self.foto_tk, text="", compound="center")
+        except Exception as e:
+            self.lbl_foto.config(text=f"Erro ao carregar\nfoto: {str(e)[:20]}", image="")
+   
+    def excluir_foto(self):
+        """Remove a foto do produto"""
+        if messagebox.askyesno("Confirmar", "Deseja realmente excluir a foto?", parent=self):
+            self.caminho_foto = ""
+            self.lbl_foto.config(text="📷\n\nClique para\nadicionar foto", image="")
 
     def editar_produto_duplo_clique(self, event):
         self.selecionar_da_busca(None)
