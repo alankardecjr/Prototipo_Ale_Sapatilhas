@@ -738,11 +738,11 @@ class SistemaAleSapatilhas:
                     menu.add_command(label=status, command=lambda s=status: self._mudar_status_despesa(s))
                 
             elif self.modo_atual == "vendas":
-                menu.add_command(label="Editar itens da venda (PDV)", command=self.editar_venda)
+                menu.add_command(label="Editar venda", command=self.editar_venda)
                 menu.add_command(label="Financeiro / Receber", command=self.abrir_financeiro_venda)
                 menu.add_command(label="Visualizar Venda", command=self.visualizar_venda)
                 menu.add_separator()
-                for status in ["✓ Finalizada", "⏳ Pendente", "✗ Cancelada"]:
+                for status in [ "⏳ Pendente","✓ Finalizada", "✗ Cancelada"]:
                     menu.add_command(label=status, command=lambda s=status: self._mudar_status_venda(s))
 
             elif self.modo_atual == "contas_receber":
@@ -989,10 +989,10 @@ Forma de Pagamento: {dados[17]} ({dados[18]}x)
 {dados[22]}
         """
         
-        lbl_info = tk.Label(main_frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Courier New", 9), justify="left", relief="solid", borderwidth=1, padx=10, pady=10)
+        lbl_info = tk.Label(main_frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Courier New", 11), justify="left", relief="solid", borderwidth=1, padx=10, pady=10)
         lbl_info.pack(fill="both", expand=True, pady=(0, 15))
-        
-        tk.Button(main_frame, text="FECHAR RECEITO", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack()
+        tk.Button(main_frame, text="FECHAR DETALHES", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack()
+    
     def visualizar_cliente(self):
         item = self.tree.selection()
         if not item: return
@@ -1006,6 +1006,10 @@ Forma de Pagamento: {dados[17]} ({dados[18]}x)
         janela.title("Visualizar Contato")
         janela.configure(bg=self.bg_fundo)
         ui_utils.calcular_dimensoes_janela(janela, largura_desejada=560, altura_desejada=620)
+
+        frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
+        frame.pack(fill="both", expand=True)
+
         
         info_text = f"""
 Tipo: {dados[0]}
@@ -1024,11 +1028,9 @@ Limite de Crédito: R$ {float(dados[12] or 0):.2f}
 Status: {dados[13]}
         """
 
-        frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
-        frame.pack(fill="both", expand=True)
         tk.Label(frame, text="👤 VISUALIZAR CONTATO", bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 14, "bold")).pack(pady=(0, 20))
         tk.Label(frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Courier New", 10), justify="left", relief="solid", borderwidth=1, padx=10, pady=10).pack(fill="both", expand=True)
-        tk.Button(frame, text="FECHAR", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack(pady=10)
+        tk.Button(frame, text="FECHAR DETALHES", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack(pady=10)
     
     
     def visualizar_despesa(self):
@@ -1084,7 +1086,7 @@ Recorrência: {recorrencia or 'Não Recorrente'}
 
         tk.Label(frame, text=titulo, bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 14, "bold")).pack(pady=(0, 20))
         tk.Label(frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Courier New", 10), justify="left", relief="solid", borderwidth=1, padx=10, pady=10).pack(fill="both", expand=True)
-        tk.Button(frame, text="FECHAR", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack(pady=10)
+        tk.Button(frame, text="FECHAR DETALHES", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack(pady=10)
 
     def visualizar_item(self):
         item = self.tree.selection()

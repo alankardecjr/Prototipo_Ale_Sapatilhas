@@ -567,7 +567,7 @@ def abrir_anotacoes(parent):
     win = tk.Toplevel(parent)
     win.title("Anotações")
     win.configure(bg=PALETA["bg_fundo"])
-    calcular_dimensoes_janela(win, largura_desejada=560, altura_desejada=480)
+    calcular_dimensoes_janela(win, largura_desejada=600, altura_desejada=670)
 
     corpo = tk.Frame(win, bg=PALETA["bg_fundo"], padx=10, pady=8)
     corpo.pack(fill="both", expand=True)

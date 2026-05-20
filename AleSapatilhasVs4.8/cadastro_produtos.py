@@ -276,8 +276,8 @@ class JanelaCadastroProdutos(tk.Toplevel):
 
         # --- Menu de contexto (botão direito) ---
         self.menu_contexto = tk.Menu(self, tearoff=0)
-        self.menu_contexto.add_command(label="Editar Item", command=self.editar_produto_menu)
-        self.menu_contexto.add_command(label="Visualizar Item", command=self.visualizar_produto_menu)
+        self.menu_contexto.add_command(label="Editar Produto", command=self.editar_produto_menu)
+        self.menu_contexto.add_command(label="Visualizar Produto", command=self.visualizar_produto_menu)
         self.menu_contexto.add_separator()
         self.menu_contexto.add_command(label="✓ Disponível", command=self.disponibilizar_produto_menu)
         self.menu_contexto.add_command(label="✗ Indisponível", command=self.indisponibilizar_produto_menu)
@@ -799,7 +799,7 @@ Status: {dados_produto[12]}
         lbl_info.pack(fill="both", expand=True, pady=(0, 20))
         
         # Botão fechar
-        tk.Button(main_frame, text="FECHAR", bg=self.cor_destaque, fg="white",
+        tk.Button(main_frame, text="FECHAR DETALHES", bg=self.cor_destaque, fg="white",
                  font=("Segoe UI", 10, "bold"), command=self.destroy).pack()
         
         self.grab_set()
