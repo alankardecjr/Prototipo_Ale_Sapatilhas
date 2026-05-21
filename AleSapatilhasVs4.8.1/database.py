@@ -38,6 +38,11 @@ def _migrar_schema(cursor):
     if "fornecedor_id" not in cols_fin:
         cursor.execute("ALTER TABLE financeiro ADD COLUMN fornecedor_id INTEGER REFERENCES clientes (id)")
 
+    cursor.execute("PRAGMA table_info(vendas)")
+    cols_vendas = [row[1] for row in cursor.fetchall()]
+    if "estoque_baixado" not in cols_vendas:
+        cursor.execute("ALTER TABLE vendas ADD COLUMN estoque_baixado INTEGER DEFAULT 0")
+
 def criar_tabelas():
     """Cria a estrutura completa do ERP com foco em rastreabilidade financeira."""
     with conectar() as conn:
@@ -109,6 +114,7 @@ def criar_tabelas():
             qtd_parcelas INTEGER DEFAULT 1,
             data_venda DATETIME DEFAULT CURRENT_TIMESTAMP,
             status_venda TEXT DEFAULT 'Finalizada' CHECK(status_venda IN ('Finalizada', 'Cancelada', 'Pendente')),
+            estoque_baixado INTEGER DEFAULT 0,
             vendedor TEXT,
             FOREIGN KEY (cliente_id) REFERENCES clientes (id)
         )""")
@@ -156,6 +162,15 @@ def criar_tabelas():
             valor_descontos REAL DEFAULT 0,
             FOREIGN KEY (venda_id) REFERENCES vendas (id) ON DELETE CASCADE,
             FOREIGN KEY (cliente_id) REFERENCES clientes (id)   
+        )""")
+
+        # --- ANOTAÇÕES ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS anotacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT NOT NULL UNIQUE,
+            conteudo TEXT,
+            data_atualizacao DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
 
         # --- PAGAMENTOS (Log de auditoria) ---
@@ -341,6 +356,61 @@ def realizar_venda_crediario(cliente_id, lista_produtos, parcelas, desc_venda=0)
                    (venda_id, cliente_id, f"Parcela {i+1}/{parcelas} - Venda #{venda_id}", valor_parc, valor_parc, venc, i+1, parcelas))    
         conn.commit()
 
+def realizar_venda_pdv(cliente_id, lista_produtos, desconto_total=0):
+    """
+    Registra venda no PDV sem dados de pagamento (status Pendente).
+    Gera títulos financeiros em aberto para liquidação em Gerenciar Receitas.
+    Retorno: (sucesso, mensagem, venda_id)
+    """
+    import config as cfg
+    with conectar() as conn:
+        cursor = conn.cursor()
+        try:
+            for item in lista_produtos:
+                cursor.execute("SELECT quantidade, produto FROM produtos WHERE id = ?", (item['id'],))
+                res = cursor.fetchone()
+                if not res or res[0] < item['qtd']:
+                    return False, f"Estoque insuficiente: {res[1] if res else 'Produto não encontrado'}", None
+
+            total_bruto = sum(p['qtd'] * p['preco'] for p in lista_produtos)
+            total_liquido = round(total_bruto - desconto_total, 2)
+
+            cursor.execute("""
+                INSERT INTO vendas (
+                    cliente_id, valor_bruto, desconto, valor_total, forma_pagamento, qtd_parcelas,
+                    status_venda, estoque_baixado
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, 0)
+            """, (cliente_id, total_bruto, desconto_total, total_liquido,
+                  cfg.FORMA_PAGAMENTO_PDV_PENDENTE, cfg.STATUS_VENDA_PDV_PENDENTE))
+            venda_id = cursor.lastrowid
+
+            for p in lista_produtos:
+                cursor.execute(
+                    "INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario, subtotal) VALUES (?, ?, ?, ?, ?)",
+                    (venda_id, p['id'], p['qtd'], p['preco'], p['qtd'] * p['preco']),
+                )
+
+            cursor.execute("SELECT nome FROM clientes WHERE id = ?", (cliente_id,))
+            nome_cli = cursor.fetchone()[0]
+            cursor.execute("""
+                INSERT INTO financeiro (
+                    tipo, venda_id, cliente_id, id_agrupador, entidade_nome, descricao, valor, valor_base,
+                    parcelas_atual, total_parcelas, data_vencimento, categoria, recorrencia, status
+                ) VALUES ('Receita', ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, 'Venda', 'À receber', 'Pendente')
+            """, (
+                venda_id, cliente_id, venda_id, nome_cli,
+                f"Venda #{venda_id} — aguardando pagamento",
+                total_liquido, total_liquido,
+                datetime.now().strftime("%Y-%m-%d"),
+            ))
+
+            conn.commit()
+            return True, "Venda registrada. Confirme o pagamento em Gerenciar Receitas.", venda_id
+        except Exception as e:
+            conn.rollback()
+            return False, f"Erro ao registrar venda: {str(e)}", None
+
+
 def realizar_venda_segura(cliente_id, lista_produtos, forma_pgto, parcelas=1, desconto_total=0):
     """
   Transação atômica de venda: valida estoque, grava venda/itens, baixa estoque e gera receitas.
@@ -390,6 +460,57 @@ def realizar_venda_segura(cliente_id, lista_produtos, forma_pgto, parcelas=1, de
             conn.rollback()
             return False, f"Erro ao verificar venda: {str(e)}", None
 
+def baixar_estoque_venda(venda_id, cursor=None):
+    """
+    Baixa estoque dos itens da venda (uma única vez).
+    Chamado ao confirmar pagamento em Gerenciar Receitas.
+    Retorno: (sucesso, mensagem)
+    """
+    def _executar(cur, conn):
+        cur.execute("SELECT status_venda, estoque_baixado FROM vendas WHERE id = ?", (venda_id,))
+        row = cur.fetchone()
+        if not row:
+            return False, "Venda não encontrada."
+        if row[0] == config.STATUS_VENDA_CANCELADA:
+            return False, "Venda cancelada."
+        if row[1]:
+            return True, "Estoque já baixado para esta venda."
+
+        cur.execute("SELECT produto_id, quantidade FROM itens_venda WHERE venda_id = ?", (venda_id,))
+        itens = cur.fetchall()
+        if not itens:
+            return False, "Venda sem itens."
+
+        for produto_id, qtd in itens:
+            cur.execute("SELECT quantidade, produto FROM produtos WHERE id = ?", (produto_id,))
+            res = cur.fetchone()
+            if not res or res[0] < qtd:
+                return False, f"Estoque insuficiente ao confirmar pagamento: {res[1] if res else 'Produto não encontrado'}"
+            cur.execute("UPDATE produtos SET quantidade = quantidade - ? WHERE id = ?", (qtd, produto_id))
+
+        cur.execute(
+            "UPDATE vendas SET estoque_baixado = 1, status_venda = ? WHERE id = ?",
+            (config.STATUS_VENDA_FINALIZADA, venda_id),
+        )
+        return True, "Estoque baixado."
+
+    if cursor is not None:
+        ok, msg = _executar(cursor, None)
+        return ok, msg
+
+    with conectar() as conn:
+        try:
+            ok, msg = _executar(conn.cursor(), conn)
+            if ok:
+                conn.commit()
+            else:
+                conn.rollback()
+            return ok, msg
+        except Exception as e:
+            conn.rollback()
+            return False, f"Erro ao baixar estoque: {str(e)}"
+
+
 def cancelar_venda(venda_id, motivo="Cancelamento solicitado"):
     """
     Cancela uma venda, devolve os itens ao estoque e 
@@ -407,12 +528,15 @@ def cancelar_venda(venda_id, motivo="Cancelamento solicitado"):
             if venda[0] == 'Cancelada':
                 return False, "Esta venda já foi cancelada anteriormente."
           
-            # 2. Devolver produtos ao estoque
-            # Buscamos os itens daquela venda
-            cursor.execute("SELECT produto_id, quantidade FROM itens_venda WHERE venda_id = ?", (venda_id,))
-            itens = cursor.fetchall()
-            for produto_id, qtd in itens:
-                cursor.execute("UPDATE produtos SET quantidade = quantidade + ? WHERE id = ?", (qtd, produto_id))
+            cursor.execute("SELECT estoque_baixado FROM vendas WHERE id = ?", (venda_id,))
+            estoque_baixado = cursor.fetchone()[0]
+            if estoque_baixado:
+                cursor.execute("SELECT produto_id, quantidade FROM itens_venda WHERE venda_id = ?", (venda_id,))
+                for produto_id, qtd in cursor.fetchall():
+                    cursor.execute(
+                        "UPDATE produtos SET quantidade = quantidade + ? WHERE id = ?",
+                        (qtd, produto_id),
+                    )
 
             # 3. Tratar o Financeiro
             # Cancelamos parcelas que ainda não foram pagas
@@ -428,10 +552,15 @@ def cancelar_venda(venda_id, motivo="Cancelamento solicitado"):
             # 4. Atualizar o status da venda
             cursor.execute("UPDATE vendas SET status_venda = 'Cancelada' WHERE id = ?", (venda_id,))
 
-            # 5. Registrar na observação do cliente (Opcional - CRM)
             cursor.execute("SELECT cliente_id FROM vendas WHERE id = ?", (venda_id,))
             cliente_id = cursor.fetchone()[0]
-            registrar_interacao(cliente_id, 'Presencial', 'Cancelamento de Venda', f"Venda #{venda_id} cancelada. Motivo: {motivo}", "Sistema")
+            cursor.execute(
+                """INSERT INTO cliente_interacoes
+                   (cliente_id, tipo_contato, assunto, detalhes, vendedor_responsavel)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (cliente_id, "Presencial", "Cancelamento de Venda",
+                 f"Venda #{venda_id} cancelada. Motivo: {motivo}", "Sistema"),
+            )
 
             conn.commit()
             return True, f"Venda #{venda_id} cancelada e estoque atualizado."
@@ -468,20 +597,22 @@ def atualizar_venda_comercial(venda_id, cliente_id, lista_produtos, desconto_tot
     with conectar() as conn:
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT status_venda FROM vendas WHERE id = ?", (venda_id,))
+            cursor.execute("SELECT status_venda, estoque_baixado FROM vendas WHERE id = ?", (venda_id,))
             row = cursor.fetchone()
             if not row:
                 return False, "Venda não encontrada."
             if row[0] == 'Cancelada':
                 return False, "Venda cancelada não pode ser editada."
+            estoque_baixado = bool(row[1])
 
             cursor.execute("SELECT COUNT(*) FROM financeiro WHERE venda_id = ? AND status = 'Pago'", (venda_id,))
             if cursor.fetchone()[0] > 0:
                 return False, "Há parcelas já recebidas. Ajuste pagamentos em Gerenciar Receitas antes de alterar itens."
 
-            cursor.execute("SELECT produto_id, quantidade FROM itens_venda WHERE venda_id = ?", (venda_id,))
-            for produto_id, qtd in cursor.fetchall():
-                cursor.execute("UPDATE produtos SET quantidade = quantidade + ? WHERE id = ?", (qtd, produto_id))
+            if estoque_baixado:
+                cursor.execute("SELECT produto_id, quantidade FROM itens_venda WHERE venda_id = ?", (venda_id,))
+                for produto_id, qtd in cursor.fetchall():
+                    cursor.execute("UPDATE produtos SET quantidade = quantidade + ? WHERE id = ?", (qtd, produto_id))
             cursor.execute("DELETE FROM itens_venda WHERE venda_id = ?", (venda_id,))
 
             for item in lista_produtos:
@@ -490,7 +621,8 @@ def atualizar_venda_comercial(venda_id, cliente_id, lista_produtos, desconto_tot
                 if not res or res[0] < item['qtd']:
                     conn.rollback()
                     return False, f"Estoque insuficiente: {res[1] if res else 'Produto não encontrado'}"
-                cursor.execute("UPDATE produtos SET quantidade = quantidade - ? WHERE id = ?", (item['qtd'], item['id']))
+                if estoque_baixado:
+                    cursor.execute("UPDATE produtos SET quantidade = quantidade - ? WHERE id = ?", (item['qtd'], item['id']))
                 cursor.execute("""
                     INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unitario, subtotal)
                     VALUES (?, ?, ?, ?, ?)
@@ -779,16 +911,76 @@ def dashboard_resumo():
         }
 
 def relatorio_vendas_geral():
-    # --- Realiza um join entre vendas e clientes para gerar um extrato histórico de todas as transações realizadas ---
+    """Extrato de vendas com tipo predominante dos itens (Calçados / Confecções)."""
     with conectar() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT v.id, c.nome, v.valor_total, v.forma_pagamento, v.qtd_parcelas, v.data_venda, v.vendedor, v.status_venda
+            SELECT v.id, c.nome, v.valor_total, v.forma_pagamento, v.qtd_parcelas, v.data_venda, v.vendedor, v.status_venda,
+                   COALESCE(
+                       (SELECT p.tipo FROM itens_venda iv
+                        JOIN produtos p ON iv.produto_id = p.id
+                        WHERE iv.venda_id = v.id
+                        GROUP BY p.tipo ORDER BY SUM(iv.quantidade) DESC LIMIT 1),
+                       '—'
+                   ) AS tipo_venda
             FROM vendas v
             JOIN clientes c ON v.cliente_id = c.id
             ORDER BY v.data_venda DESC
         """)
         return cursor.fetchall()
+
+
+# --- Anotações (persistência em SQLite) ---
+def listar_anotacoes(ordem_alfabetica=True):
+    sql = "SELECT id, titulo, conteudo, data_atualizacao FROM anotacoes"
+    sql += " ORDER BY titulo ASC" if ordem_alfabetica else " ORDER BY data_atualizacao DESC"
+    with conectar() as conn:
+        return conn.execute(sql).fetchall()
+
+
+def buscar_anotacao_por_titulo(titulo):
+    with conectar() as conn:
+        return conn.execute(
+            "SELECT id, titulo, conteudo, data_atualizacao FROM anotacoes WHERE titulo LIKE ?",
+            (f"%{titulo}%",),
+        ).fetchall()
+
+
+def salvar_anotacao(titulo, conteudo, anotacao_id=None):
+    titulo = (titulo or "").strip()
+    if not titulo:
+        return False, "Informe um título para a nota."
+    try:
+        with conectar() as conn:
+            if anotacao_id:
+                conn.execute(
+                    "UPDATE anotacoes SET titulo = ?, conteudo = ?, data_atualizacao = CURRENT_TIMESTAMP WHERE id = ?",
+                    (titulo, conteudo, anotacao_id),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO anotacoes (titulo, conteudo) VALUES (?, ?)",
+                    (titulo, conteudo),
+                )
+            conn.commit()
+        return True, "Nota salva."
+    except sqlite3.IntegrityError:
+        return False, "Já existe uma nota com este título."
+
+
+def excluir_anotacao(anotacao_id):
+    with conectar() as conn:
+        conn.execute("DELETE FROM anotacoes WHERE id = ?", (anotacao_id,))
+        conn.commit()
+    return True, "Nota excluída."
+
+
+def obter_anotacao_por_id(anotacao_id):
+    with conectar() as conn:
+        return conn.execute(
+            "SELECT id, titulo, conteudo, data_atualizacao FROM anotacoes WHERE id = ?",
+            (anotacao_id,),
+        ).fetchone()
 def fluxo_caixa_mensal(mes, ano):
     """Consolida entradas e saídas do período para o fluxo de caixa."""
     with conectar() as conn:

@@ -89,6 +89,37 @@ def test_cliente_produto(r):
     r.registrar("listar_itens com foto", len(itens) >= 2 and len(itens[0]) >= 8)
 
 
+def test_venda_pdv_estoque(r, cid):
+    """PDV pendente não baixa estoque; baixa só após pagamento."""
+    produtos = db.listar_itens()
+    if not produtos:
+        r.registrar("pdv estoque - produtos", False, "sem produtos")
+        return
+    pid = produtos[0][0]
+    qtd_antes = None
+    with db.conectar() as conn:
+        qtd_antes = conn.execute("SELECT quantidade FROM produtos WHERE id=?", (pid,)).fetchone()[0]
+
+    lista = [{"id": pid, "qtd": 1, "preco": float(produtos[0][5])}]
+    res, msg, vid = db.realizar_venda_pdv(cid, lista, 0)
+    r.registrar("realizar_venda_pdv", res and vid is not None, msg)
+    if not vid:
+        return
+
+    with db.conectar() as conn:
+        qtd_apos_pdv = conn.execute("SELECT quantidade FROM produtos WHERE id=?", (pid,)).fetchone()[0]
+        eb = conn.execute("SELECT estoque_baixado FROM vendas WHERE id=?", (vid,)).fetchone()[0]
+    r.registrar("pdv não baixa estoque", qtd_apos_pdv == qtd_antes and eb == 0)
+
+    if vid:
+        ok, msg_b = db.baixar_estoque_venda(vid)
+        with db.conectar() as conn:
+            qtd_apos_baixa = conn.execute("SELECT quantidade FROM produtos WHERE id=?", (pid,)).fetchone()[0]
+            eb2 = conn.execute("SELECT estoque_baixado FROM vendas WHERE id=?", (vid,)).fetchone()[0]
+        r.registrar("baixar_estoque_venda", ok and eb2 == 1, msg_b)
+        r.registrar("estoque reduzido após pagamento", qtd_apos_baixa == qtd_antes - 1)
+
+
 def test_venda(r, cid):
     """Venda atômica com baixa de estoque."""
     produtos = db.listar_itens()
@@ -133,6 +164,85 @@ def test_atualizacao_produto(r):
     r.registrar("atualizar_produto quantidade", q == 99)
 
 
+def test_anotacoes(r):
+    ok, msg = db.salvar_anotacao("Nota Teste A", "Conteúdo da nota")
+    r.registrar("salvar anotacao", ok, msg)
+    lista = db.listar_anotacoes()
+    r.registrar("listar anotacoes", any(n[1] == "Nota Teste A" for n in lista))
+    busca = db.buscar_anotacao_por_titulo("Teste")
+    r.registrar("buscar anotacao", len(busca) >= 1)
+    if busca:
+        db.excluir_anotacao(busca[0][0])
+
+
+def test_senha_fluxo_config(r):
+    """Senha lida/gravada em arquivo local temporário."""
+    import json
+    import config as cfg
+    path_antigo = cfg.SECRETS_PATH
+    senha_antiga = cfg.SENHA_FLUXO_CAIXA
+    tmp = os.path.join(tempfile.gettempdir(), "test_secrets_erp.json")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"senha_fluxo_caixa": "teste_p4_99"}, f)
+        cfg.SECRETS_PATH = tmp
+        cfg.SENHA_FLUXO_CAIXA = cfg.obter_senha_fluxo_caixa()
+        r.registrar("obter senha arquivo", cfg.SENHA_FLUXO_CAIXA == "teste_p4_99")
+        ok, _ = cfg.salvar_senha_fluxo_caixa("nova_p4_88")
+        r.registrar("salvar senha arquivo", ok and cfg.obter_senha_fluxo_caixa() == "nova_p4_88")
+    finally:
+        cfg.SECRETS_PATH = path_antigo
+        cfg.SENHA_FLUXO_CAIXA = senha_antiga
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def test_cancelar_venda(r, cid):
+    produtos = db.listar_itens()
+    if not produtos:
+        return
+    pid = produtos[0][0]
+    with db.conectar() as conn:
+        q0 = conn.execute("SELECT quantidade FROM produtos WHERE id=?", (pid,)).fetchone()[0]
+
+    res, _, vid = db.realizar_venda_pdv(cid, [{"id": pid, "qtd": 1, "preco": 50.0}], 0)
+    if not res:
+        r.registrar("cancelar - criar venda", False)
+        return
+
+    ok, msg = db.cancelar_venda(vid)
+    with db.conectar() as conn:
+        q1 = conn.execute("SELECT quantidade FROM produtos WHERE id=?", (pid,)).fetchone()[0]
+        st = conn.execute("SELECT status_venda FROM vendas WHERE id=?", (vid,)).fetchone()[0]
+    r.registrar("cancelar venda pendente", ok and st == "Cancelada", msg)
+    r.registrar("cancelar pendente não altera estoque", q1 == q0)
+
+    res2, _, vid2 = db.realizar_venda_pdv(cid, [{"id": pid, "qtd": 1, "preco": 50.0}], 0)
+    if not res2:
+        r.registrar("cancelar paga - criar venda", False)
+        return
+    db.baixar_estoque_venda(vid2)
+    with db.conectar() as conn:
+        q2 = conn.execute("SELECT quantidade FROM produtos WHERE id=?", (pid,)).fetchone()[0]
+    ok2, msg2 = db.cancelar_venda(vid2)
+    with db.conectar() as conn:
+        q3 = conn.execute("SELECT quantidade FROM produtos WHERE id=?", (pid,)).fetchone()[0]
+    r.registrar("cancelar paga devolve estoque", ok2 and q3 == q2 + 1, msg2)
+
+
+def test_pdv_desconto(r, cid):
+    produtos = db.listar_itens()
+    if not produtos:
+        return
+    pid = produtos[0][0]
+    lista = [{"id": pid, "qtd": 1, "preco": 100.0}]
+    res, _, vid = db.realizar_venda_pdv(cid, lista, desconto_total=15.0)
+    if res and vid:
+        v = db.obter_venda_por_id(vid)
+        r.registrar("pdv desconto gravado", v and abs(v[6] - 15.0) < 0.01 and abs(v[7] - 85.0) < 0.01)
+        db.cancelar_venda(vid)
+
+
 def test_imports_modulos(r):
     """Garante que módulos de tela importam sem erro."""
     try:
@@ -163,6 +273,11 @@ def main():
             "C2", "99988877766", "11888887777", "", None, 0,
             "", "", "", "", "", 0, "Cliente",
         )
+        test_anotacoes(r)
+        test_senha_fluxo_config(r)
+        test_venda_pdv_estoque(r, cid)
+        test_pdv_desconto(r, cid)
+        test_cancelar_venda(r, cid)
         test_venda(r, cid)
     except Exception:
         traceback.print_exc()

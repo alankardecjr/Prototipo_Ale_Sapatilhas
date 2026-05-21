@@ -67,7 +67,9 @@ class JanelaCadastroProdutos(tk.Toplevel):
     
         if dados_produto:
             self.preencher_dados(dados_produto)
-     
+        if hasattr(self, "_rastreador"):
+            self._rastreador.marcar_limpo()
+
         self.grab_set()
 
     def setup_styles(self):
@@ -274,25 +276,25 @@ class JanelaCadastroProdutos(tk.Toplevel):
         )
         self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
 
-        # --- Menu de contexto (botão direito) ---
-        self.menu_contexto = tk.Menu(self, tearoff=0)
-        self.menu_contexto.add_command(label="Editar Produto", command=self.editar_produto_menu)
-        self.menu_contexto.add_command(label="Visualizar Produto", command=self.visualizar_produto_menu)
-        self.menu_contexto.add_separator()
-        self.menu_contexto.add_command(label="✓ Disponível", command=self.disponibilizar_produto_menu)
-        self.menu_contexto.add_command(label="✗ Indisponível", command=self.indisponibilizar_produto_menu)
-        self.menu_contexto.add_command(label="⭐ Promocional", command=self.promocional_produto_menu)
-
-        # Bindings para treeview
         self.tree_busca.bind("<Double-1>", self.editar_produto_duplo_clique)
-        self.tree_busca.bind("<Button-3>", self.menu_contexto_produto)
 
+        self._rastreador = ui_utils.RastreadorAlteracoes(self._snapshot_formulario)
         self.atualizar_tree_busca()
         if not self.produto_id:
             self.gerar_sku_automatico()
 
+    def _snapshot_formulario(self):
+        return (
+            self.ent_produto.get(),
+            self.cb_cor.get(),
+            self.cb_tam.get(),
+            self.ent_qtd.get(),
+            self.ent_custo.get(),
+            self.ent_venda.get(),
+        )
+
     def _fechar_com_confirmacao(self):
-        if ui_utils.confirmar(self, "Fechar", "Deseja fechar sem salvar as alterações?"):
+        if ui_utils.confirmar_fechar_formulario(self, self._rastreador):
             self.destroy()
 
     def _atualizar_sku_preview(self):
@@ -671,89 +673,11 @@ class JanelaCadastroProdutos(tk.Toplevel):
             if dados:
                 self.preencher_dados(dados)
 
-    def menu_contexto_produto(self, event):
-        """Mostrar menu de contexto no botão direito"""
-        try:
-            item = self.tree_busca.identify_row(event.y)
-            if item:
-                self.tree_busca.selection_set(item)
-                self.menu_contexto.post(event.x_root, event.y_root)
-        except:
-            pass
-
-    def editar_produto_menu(self):
-        """Editar produto via menu de contexto"""
-        if messagebox.askyesno("Confirmar", "Deseja editar este produto?", parent=self):
-            self.editar_produto_duplo_clique(None)
-
-    def visualizar_produto_menu(self):
-        """Visualizar produto via menu de contexto"""
-        selecao = self.tree_busca.selection()
-        if not selecao: return
-        id_prod = self.tree_busca.item(selecao[0])["values"][0]
-        
-        with database.conectar() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM produtos WHERE id = ?", (id_prod,))
-            dados = cursor.fetchone()
-        
-        if dados:
-            VisualizarProduto(self, dados)
-
     def _manter_em_primeiro_plano(self):
         try:
             self.attributes("-topmost", True)
         except Exception as e:
             messagebox.showwarning("Aviso", f"Não foi possível manter esta janela em primeiro plano: {e}", parent=self)
-
-    def indisponibilizar_produto_menu(self):
-        """Indisponibilizar produto via menu de contexto"""
-        selecao = self.tree_busca.selection()
-        if not selecao: return
-        id_prod = self.tree_busca.item(selecao)["values"][0]
-        
-        if messagebox.askyesno("Confirmar", "Deseja indisponibilizar este item?", parent=self):
-            try:
-                database.atualizar_produto(id_prod, status_item="Indisponível")
-                messagebox.showinfo("Sucesso", "Item indisponibilizado!", parent=self)
-                self.atualizar_tree_busca()
-                if hasattr(self.master, "exibir_produtos"):
-                    self.master.exibir_produtos()
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao indisponibilizar item: {str(e)}", parent=self)
-
-    def disponibilizar_produto_menu(self):
-        """Disponibilizar produto via menu de contexto"""
-        selecao = self.tree_busca.selection()
-        if not selecao: return
-        id_prod = self.tree_busca.item(selecao)["values"][0]
-        
-        if messagebox.askyesno("Confirmar", "Deseja disponbilizar este item?", parent=self):
-            try:
-                database.atualizar_produto(id_prod, status_item="Disponível")
-                messagebox.showinfo("Sucesso", "Item disponbilizado!", parent=self)
-                self.atualizar_tree_busca()
-                if hasattr(self.master, "exibir_produtos"):
-                    self.master.exibir_produtos()
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao disponbilizar item: {str(e)}", parent=self)
-
-    def promocional_produto_menu(self):
-        """Marcar produto como promocional via menu de contexto"""
-        selecao = self.tree_busca.selection()
-        if not selecao: return
-        id_prod = self.tree_busca.item(selecao)["values"][0]
-        
-        if messagebox.askyesno("Confirmar", "Deseja marcar este item como promocional?", parent=self):
-            try:
-                database.atualizar_produto(id_prod, status_item="Promocional")
-                messagebox.showinfo("Sucesso", "Item marcado como promocional!", parent=self)
-                self.atualizar_tree_busca()
-                if hasattr(self.master, "exibir_produtos"):
-                    self.master.exibir_produtos()
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao marcar item como promocional: {str(e)}", parent=self)
-
 
 class VisualizarProduto(tk.Toplevel):
     """Classe para visualizar detalhes do produto"""

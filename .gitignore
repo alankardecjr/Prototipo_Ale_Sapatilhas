@@ -1,0 +1,25 @@
+# Banco SQLite local (dados sensíveis)
+*.db
+AleSapatilhasVs4.8/AleSapatilhasVs4.8db
+
+# Credenciais locais (não versionar)
+secrets.local.json
+AleSapatilhasVs4.8/secrets.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+
+# IDE / OS
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+
+# Notas antigas em arquivo (legado; preferir tabela anotacoes)
+AleSapatilhasVs4.8/notas_salvas/*.txt
+!AleSapatilhasVs4.8/notas_salvas/.gitkeep

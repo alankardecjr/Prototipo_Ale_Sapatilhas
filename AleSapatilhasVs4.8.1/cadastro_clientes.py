@@ -21,9 +21,10 @@ class JanelaCadastroClientes(tk.Toplevel):
 
     Gerar venda salva o contato e abre o PDV com os dados carregados.
     """
-    def __init__(self, master, dados_cliente=None):
+    def __init__(self, master, dados_cliente=None, on_salvo=None):
         """Inicializa formulário; preenche campos se dados_cliente (SELECT *) for passado."""
         super().__init__(master)
+        self.on_salvo = on_salvo
 
         # --- Paleta de cores ---
         paleta = ui_utils.get_paleta()
@@ -55,9 +56,12 @@ class JanelaCadastroClientes(tk.Toplevel):
 
         self.criar_widgets()
         self._atualizar_botao_salvar()
+        self._rastreador = ui_utils.RastreadorAlteracoes(lambda: str(self.get_dados_campos()))
         if dados_cliente:
             self.preencher_dados(dados_cliente)
+            self._rastreador.marcar_limpo()
         self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._fechar)
 
     def formatar_data_para_bd(self, data_str):
         try:
@@ -168,7 +172,7 @@ class JanelaCadastroClientes(tk.Toplevel):
         )
 
     def _fechar(self):
-        if ui_utils.confirmar(self, "Fechar", "Deseja fechar sem salvar?"):
+        if ui_utils.confirmar_fechar_formulario(self, self._rastreador):
             self.destroy()
 
     def get_dados_campos(self):
@@ -191,8 +195,6 @@ class JanelaCadastroClientes(tk.Toplevel):
         }
 
     def salvar_dados(self):
-        if not ui_utils.confirmar(self, "Confirmar", "Deseja salvar este cadastro?"):
-            return
         d = self.get_dados_campos()
         if not d["nome"] or not d["cpf"] or not d["tel"]:
             messagebox.showwarning("Atenção", "Preencha os campos obrigatórios (Nome, CPF e Telefone).", parent=self)
@@ -205,6 +207,7 @@ class JanelaCadastroClientes(tk.Toplevel):
                 'bairro': d['bairro'], 'cidade': d['cidade'], 'cep': d['cep'], 'observacao': d['obs'],
                 'limite_credito': d['limite'], 'status_cliente': d['status']
             }
+            cid = self.cliente_id
             if self.cliente_id:
                 database.atualizar_cliente(self.cliente_id, **dados_atualizacao)
                 messagebox.showinfo("Sucesso", "Cadastro atualizado!", parent=self)
@@ -217,10 +220,13 @@ class JanelaCadastroClientes(tk.Toplevel):
                     messagebox.showerror("Erro", "Não foi possível cadastrar o cliente. Verifique o CPF e tente novamente.", parent=self)
                     return
                 messagebox.showinfo("Sucesso", "Cliente cadastrado!", parent=self)
-            
+
             if hasattr(self.master, "exibir_clientes"):
                 self.master.exibir_clientes()
+            cb = self.on_salvo
             self.destroy()
+            if cb and cid:
+                cb(cid)
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao salvar: {e}", parent=self)
 

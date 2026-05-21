@@ -12,6 +12,7 @@ Complementa cadastro_vendas.py: o PDV gera a venda; aqui liquida-se o dinheiro.
 import tkinter as tk
 from tkinter import messagebox, ttk
 from datetime import datetime
+import config
 import database
 import ui_utils
 
@@ -50,6 +51,7 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         
         self.receita_id = dados_receita[0] if dados_receita else None
         self.cliente_selecionado_id = None
+        self._liquido_editado_manual = False
         
         self.list_formas = ["Dinheiro", "Cartão de Crédito", "Cartão de Débito", "PIX", "Crediário", "Boleto", "Outros"]
         self.list_categorias = ["Venda", "Ajuste de Caixa", "Rendimento", "Outros"]
@@ -65,10 +67,10 @@ class JanelaGerenciarReceitas(tk.Toplevel):
                 self.venda_id = dados_receita[2]
         elif venda_id:
             self._carregar_por_venda(venda_id)
-        else:
-            self.pesquisar_clientes()
-            
+        self._rastreador = ui_utils.RastreadorAlteracoes(self._snapshot_receita)
+        self._rastreador.marcar_limpo()
         self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._fechar_janela)
 
     def setup_styles(self):
         style = ttk.Style()
@@ -161,52 +163,59 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.ent_descontos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
         ui_utils.anexar_botao_calculadora(form_frame, self.ent_descontos, row=3, column=2, sticky="e")
 
-        self.ent_valor_pago = criar_campo_form("AMORTIZAÇÃO / VALOR AMORTIZADO", 4, 0)
+        self.ent_encargos_op_pct = criar_campo_form("% ENCARGOS OPERADORA", 4, 0)
+        self.ent_encargos_op_pct.insert(0, "0.00")
+        self.ent_encargos_op_pct.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
+
+        self.ent_valor_liquido = criar_campo_form("VALOR LÍQUIDO (FINANCEIRO)*", 4, 1)
+        self.ent_valor_liquido.bind("<KeyRelease>", lambda e: self._liquido_manual())
+
+        self.ent_valor_pago = criar_campo_form("AMORTIZAÇÃO / VALOR AMORTIZADO", 4, 2)
         self.ent_valor_pago.insert(0, "0.00")
         self.ent_valor_pago.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
 
         # Datas Cadastrais e Operacionais
-        self.ent_lancamento = criar_campo_form("DATA EMISSÃO", 4, 1)
+        self.ent_lancamento = criar_campo_form("DATA EMISSÃO", 6, 0)
         self.ent_lancamento.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        ui_utils.anexar_botao_calendario(form_frame, self.ent_lancamento, row=5, column=1, sticky="e")
-        
-        self.ent_vencimento = criar_campo_form("DATA VENCIMENTO PARCELA*", 4, 2)
-        self.ent_vencimento.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        ui_utils.anexar_botao_calendario(form_frame, self.ent_vencimento, row=5, column=2, sticky="e")
-        
-        self.ent_pagamento = criar_campo_form("DATA LIQUIDAÇÃO", 6, 0)
-        ui_utils.anexar_botao_calendario(form_frame, self.ent_pagamento, row=7, column=0, sticky="e")
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_lancamento, row=7, column=0, sticky="e")
 
-        # Comboboxes de Estado da Receita
-        tk.Label(form_frame, text="STATUS RECEBIMENTO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=6, column=1, sticky="w", padx=5)
+        self.ent_vencimento = criar_campo_form("DATA VENCIMENTO PARCELA*", 6, 1)
+        self.ent_vencimento.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_vencimento, row=7, column=1, sticky="e")
+
+        self.ent_pagamento = criar_campo_form("DATA LIQUIDAÇÃO", 6, 2)
+        ui_utils.anexar_botao_calendario(form_frame, self.ent_pagamento, row=7, column=2, sticky="e")
+
+        tk.Label(form_frame, text="STATUS RECEBIMENTO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=8, column=0, sticky="w", padx=5)
         self.cb_status = ttk.Combobox(form_frame, values=self.list_status, state="readonly", font=("Segoe UI", 9))
         self.cb_status.set("Pendente")
-        self.cb_status.grid(row=7, column=1, sticky="ew", ipady=3, padx=5)
+        self.cb_status.grid(row=9, column=0, sticky="ew", ipady=3, padx=5)
 
-        tk.Label(form_frame, text="CATEGORIA FLUXO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=6, column=2, sticky="w", padx=5)
+        tk.Label(form_frame, text="CATEGORIA FLUXO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=8, column=1, sticky="w", padx=5)
         self.cb_cat = ttk.Combobox(form_frame, values=self.list_categorias, state="readonly", font=("Segoe UI", 9))
         self.cb_cat.set("Venda")
-        self.cb_cat.grid(row=7, column=2, sticky="ew", ipady=3, padx=5)
+        self.cb_cat.grid(row=9, column=1, sticky="ew", ipady=3, padx=5)
 
-        tk.Label(form_frame, text="FORMA LIQUIDAÇÃO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=8, column=0, sticky="w", padx=5)
+        tk.Label(form_frame, text="FORMA LIQUIDAÇÃO*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=8, column=2, sticky="w", padx=5)
         self.cb_forma = ttk.Combobox(form_frame, values=self.list_formas, state="readonly", font=("Segoe UI", 9))
         self.cb_forma.set("PIX")
-        self.cb_forma.grid(row=9, column=0, sticky="ew", ipady=3, padx=5)
+        self.cb_forma.grid(row=9, column=2, sticky="ew", ipady=3, padx=5)
+        self.cb_forma.bind("<<ComboboxSelected>>", self._ao_mudar_forma_pagamento)
 
-        tk.Label(form_frame, text="DIVISÃO DE PARCELAS*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=8, column=1, sticky="w", padx=5)
+        tk.Label(form_frame, text="DIVISÃO DE PARCELAS*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold")).grid(row=10, column=0, sticky="w", padx=5)
         self.cb_recorrencia = ttk.Combobox(form_frame, values=self.list_recorrencia, state="readonly", font=("Segoe UI", 9))
         self.cb_recorrencia.set("Não Recorrente")
-        self.cb_recorrencia.grid(row=9, column=1, sticky="ew", ipady=3, padx=5)
+        self.cb_recorrencia.grid(row=11, column=0, sticky="ew", ipady=3, padx=5)
         self.cb_recorrencia.bind("<<ComboboxSelected>>", self.toggle_recorrencia)
 
         self.lbl_parc = tk.Label(form_frame, text="Nº PARCELAS*", bg=self.bg_fundo, fg=self.cor_lbl, font=("Segoe UI", 8, "bold"))
         self.ent_parc = tk.Entry(form_frame, font=("Segoe UI", 9), bg=self.bg_card, fg=self.cor_texto, relief="flat", highlightbackground=self.cor_borda, highlightthickness=1)
         self.ent_parc.insert(0, "1")
         self.ent_parc.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
+        ui_utils.configurar_entry_inteiro(self.ent_parc, self)
 
-        # Painéis de Cálculos Dinâmicos
         self.lbl_painel_calculo = tk.Label(form_frame, text="Valor Líquido Esperado: R$ 0.00 | Saldo em Aberto: R$ 0.00", bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 9, "bold"), anchor="w")
-        self.lbl_painel_calculo.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(8, 0), padx=5)
+        self.lbl_painel_calculo.grid(row=12, column=0, columnspan=3, sticky="ew", pady=(8, 0), padx=5)
 
         # --- SEÇÃO TREEVIEW: HISTÓRICO DE PARCELAS VINCULADAS ---
         tk.Label(main_frame, text="📑 Carnê / Fluxo Relacionado das Parcelas do Cliente", bg=self.bg_fundo, fg=self.cor_destaque, font=("Segoe UI", 9, "bold")).grid(row=3, column=0, columnspan=3, sticky="w", pady=(15, 2), padx=5)
@@ -222,7 +231,7 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         _pal = ui_utils.get_paleta()
         frame_rodape = tk.Frame(main_frame, bg=self.bg_fundo)
         frame_rodape.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        frame_rodape.columnconfigure((0, 1, 2), weight=1, uniform="rodape_rec")
+        frame_rodape.columnconfigure((0, 1, 2, 3), weight=1, uniform="rodape_rec")
         self.btn_salvar = ui_utils.criar_botao_rodape(
             frame_rodape,
             ui_utils.texto_botao_salvar("Receita", bool(self.receita_id)),
@@ -231,22 +240,74 @@ class JanelaGerenciarReceitas(tk.Toplevel):
             _pal,
         )
         self.btn_salvar.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
+        self.btn_editar_itens = ui_utils.criar_botao_rodape(
+            frame_rodape, "Editar Itens da Venda", self._editar_itens_venda, "acao2", _pal,
+        )
+        self.btn_editar_itens.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+        self.btn_editar_itens.config(state="normal" if self.venda_id else "disabled")
         self.btn_deletar = ui_utils.criar_botao_rodape(
             frame_rodape, "Estornar Receita", self.excluir_crud, "acao2", _pal,
         )
-        self.btn_deletar.grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+        self.btn_deletar.grid(row=0, column=2, sticky="ew", padx=4, ipady=6)
         self.btn_deletar.config(state="normal" if self.receita_id else "disabled")
         self.btn_cancelar = ui_utils.criar_botao_rodape(
-            frame_rodape, "Fechar Janela", self.destroy, "sair", _pal,
+            frame_rodape, "Fechar Janela", self._fechar_janela, "sair", _pal,
         )
-        self.btn_cancelar.grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
+        self.btn_cancelar.grid(row=0, column=3, sticky="ew", padx=(4, 0), ipady=6)
+        frame_rodape.columnconfigure(3, weight=1)
 
     # --- LÓGICA ---
 
+    def _snapshot_receita(self):
+        return (
+            self.ent_cliente_nome.get(),
+            self.ent_desc.get(),
+            self.ent_valor_base.get(),
+            self.ent_valor_liquido.get(),
+            self.cb_forma.get(),
+            self.ent_parc.get(),
+        )
+
+    def _fechar_janela(self):
+        if ui_utils.confirmar_fechar_formulario(self, self._rastreador):
+            self.destroy()
+
+    def _liquido_manual(self):
+        self._liquido_editado_manual = True
+
+    def _ao_mudar_forma_pagamento(self, event=None):
+        forma = self.cb_forma.get()
+        if forma == "Cartão de Débito":
+            self.ent_parc.delete(0, tk.END)
+            self.ent_parc.insert(0, "1")
+            self.cb_recorrencia.set("Não Recorrente")
+            self.toggle_recorrencia()
+        elif forma == "Cartão de Crédito":
+            self.cb_recorrencia.set("Parcelado")
+            self.toggle_recorrencia()
+            try:
+                if int(self.ent_parc.get() or "1") < 2:
+                    self.ent_parc.delete(0, tk.END)
+                    self.ent_parc.insert(0, "2")
+            except ValueError:
+                self.ent_parc.delete(0, tk.END)
+                self.ent_parc.insert(0, "2")
+        self.atualizar_calculos()
+
+    def _editar_itens_venda(self):
+        if not self.venda_id:
+            return
+        v = database.obter_venda_por_id(self.venda_id)
+        if not v:
+            return
+        from cadastro_vendas import JanelaCadastroVendas
+        dados_venda = {"id": self.venda_id, "desconto": v[6], "forma": v[8], "parcelas": v[9]}
+        JanelaCadastroVendas(self.master, dados_venda=dados_venda)
+
     def toggle_recorrencia(self, event=None):
         if self.cb_recorrencia.get() == "Parcelado":
-            self.lbl_parc.grid(row=8, column=2, sticky="w", padx=5)
-            self.ent_parc.grid(row=9, column=2, sticky="ew", ipady=3, padx=5)
+            self.lbl_parc.grid(row=10, column=1, sticky="w", padx=5)
+            self.ent_parc.grid(row=11, column=1, sticky="ew", ipady=3, padx=5)
         else:
             self.lbl_parc.grid_remove()
             self.ent_parc.grid_remove()
@@ -279,56 +340,45 @@ class JanelaGerenciarReceitas(tk.Toplevel):
             ))
 
     def validar_e_salvar(self):
-        if ui_utils.confirmar(self, "Confirmar", "Deseja salvar os dados de recebimento?"):
-            self.salvar_crud()
-
-    def pesquisar_clientes(self, event=None):
-        termo = self.ent_busca_cli.get().lower()
-        if termo == self.placeholder_busca.lower(): termo = ""
-        self.tree_cli.delete(*self.tree_cli.get_children())
-        
-        with database.conectar() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, nome, telefone, status_cliente FROM clientes WHERE tipo='Cliente' AND (nome LIKE ? OR telefone LIKE ?)", (f"%{termo}%", f"%{termo}%"))
-            for c in cursor.fetchall():
-                self.tree_cli.insert("", "end", values=c)
-
-    def selecionar_cliente(self, event=None):
-        sel = self.tree_cli.selection()
-        if not sel: return
-        dados = self.tree_cli.item(sel[0], "values")
-        self.cliente_selecionado_id = dados[0]
-        
-        with database.conectar() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT cpf, tamanho_calcado, limite_credito, status_cliente FROM clientes WHERE id=?", (self.cliente_selecionado_id,))
-            extra = cursor.fetchone()
-        
-        self.ent_cliente_nome.delete(0, tk.END)
-        self.ent_cliente_nome.insert(0, dados[1])
-        
-        txt = f"Cliente: {dados[1]} | Tel: {dados[2]} | Perfil: {extra[3]}\nNº Calçado: {extra[1] or 'N/A'} | Limite de Crédito Crediário: R$ {extra[2]:.2f}"
-        self.lbl_detalhes_contato.config(text=txt, font=("Segoe UI", 9, "bold"), fg=self.cor_texto)
+        if not ui_utils.solicitar_senha_fluxo(self):
+            return
+        self.salvar_crud()
 
     def atualizar_calculos(self):
         try:
             v_base = float(self.ent_valor_base.get().replace(",", ".")) if self.ent_valor_base.get().strip() else 0.0
             enc = float(self.ent_encargos.get().replace(",", ".")) if self.ent_encargos.get().strip() else 0.0
             desc = float(self.ent_descontos.get().replace(",", ".")) if self.ent_descontos.get().strip() else 0.0
+            pct_op = float(self.ent_encargos_op_pct.get().replace(",", ".")) if self.ent_encargos_op_pct.get().strip() else 0.0
             pado = float(self.ent_valor_pago.get().replace(",", ".")) if self.ent_valor_pago.get().strip() else 0.0
             parc = int(self.ent_parc.get()) if self.ent_parc.get().strip() else 1
         except ValueError:
             self.lbl_painel_calculo.config(text="Erro de digitação nos campos de faturamento.", fg="red")
             return
 
+        if self.cb_forma.get() in config.FORMAS_CARTAO and pct_op > 0:
+            enc_op = round(v_base * (pct_op / 100), 2)
+            enc = round(enc + enc_op, 2)
+
         v_liquido = round(v_base + enc - desc, 2)
-        devedor = round(v_liquido - pado, 2)
-        
+        if not getattr(self, "_liquido_editado_manual", False):
+            self.ent_valor_liquido.delete(0, tk.END)
+            self.ent_valor_liquido.insert(0, f"{v_liquido:.2f}")
+
+        try:
+            v_liq_campo = float(self.ent_valor_liquido.get().replace(",", "."))
+        except ValueError:
+            v_liq_campo = v_liquido
+
+        devedor = round(v_liq_campo - pado, 2)
         if self.cb_recorrencia.get() == "Parcelado" and parc > 1:
-            txt = f"Valor Bruto Ajustado: R$ {v_liquido:.2f} | {parc}x Carnê de R$ {round(v_liquido/parc, 2):.2f} | Saldo em Aberto: R$ {devedor:.2f}"
+            txt = (
+                f"Valor líquido: R$ {v_liq_campo:.2f} | {parc}x de R$ {round(v_liq_campo / parc, 2):.2f} "
+                f"| Saldo: R$ {devedor:.2f}"
+            )
         else:
-            txt = f"Valor Receita Líquida: R$ {v_liquido:.2f} | Saldo Pendente: R$ {devedor:.2f}"
-        
+            txt = f"Valor líquido contabilizado: R$ {v_liq_campo:.2f} | Saldo pendente: R$ {devedor:.2f}"
+
         self.lbl_painel_calculo.config(text=txt, fg=self.cor_destaque)
 
     def carregar_parcelas_historico(self, nome, desc):
@@ -376,8 +426,16 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.cb_cat.set(d[18] if d[18] else "Venda")  # categoria
         self.cb_status.set(d[19])
         
-        self.ent_parc.delete(0, tk.END); self.ent_parc.insert(0, str(d[14] or 1))
+        self.ent_parc.delete(0, tk.END)
+        self.ent_parc.insert(0, str(d[14] if len(d) > 14 and d[14] else 1))
+        if hasattr(self, "ent_encargos_op_pct"):
+            self.ent_encargos_op_pct.delete(0, tk.END)
+            self.ent_encargos_op_pct.insert(0, f"{float(d[22] or 0):.2f}" if len(d) > 22 else "0.00")
+        self.ent_valor_liquido.delete(0, tk.END)
+        self.ent_valor_liquido.insert(0, f"{float(d[7] or 0):.2f}")
+        self._liquido_editado_manual = False
         self.toggle_recorrencia()
+        self._rastreador.marcar_limpo()
         
         self.btn_deletar.config(state="normal")
         self.btn_salvar.config(text=ui_utils.texto_botao_salvar("Receita", True))
@@ -386,6 +444,36 @@ class JanelaGerenciarReceitas(tk.Toplevel):
             self.carregar_parcelas_por_venda(self.venda_id)
         else:
             self.carregar_parcelas_historico(d[5], d[6])
+
+    def _redistribuir_parcelas_venda(self, cursor, venda_id, valor_liquido, parcelas):
+        """Recria parcelas pendentes proporcionalmente ao valor líquido (cartão parcelado)."""
+        cursor.execute(
+            "DELETE FROM financeiro WHERE venda_id=? AND tipo='Receita' AND status != 'Pago'",
+            (venda_id,),
+        )
+        cursor.execute(
+            "SELECT c.nome, v.cliente_id FROM vendas v JOIN clientes c ON v.cliente_id = c.id WHERE v.id = ?",
+            (venda_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return
+        nome_cli, cliente_id = row
+        valor_parcela = round(valor_liquido / parcelas, 2)
+        for i in range(parcelas):
+            if i == parcelas - 1:
+                valor_parcela = round(valor_liquido - (valor_parcela * (parcelas - 1)), 2)
+            vencimento = database.adicionar_meses(datetime.now(), i).strftime("%Y-%m-%d")
+            cursor.execute("""
+                INSERT INTO financeiro (
+                    tipo, venda_id, cliente_id, id_agrupador, entidade_nome, descricao, valor, valor_base,
+                    parcelas_atual, total_parcelas, data_vencimento, categoria, recorrencia, status
+                ) VALUES ('Receita', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Venda', 'Parcelado', 'Pendente')
+            """, (
+                venda_id, cliente_id, venda_id, nome_cli,
+                f"Venda #{venda_id} - Parcela {i + 1}/{parcelas}",
+                valor_parcela, valor_parcela, i + 1, parcelas, vencimento,
+            ))
 
     def salvar_crud(self):
         nome = self.ent_cliente_nome.get().strip()
@@ -413,7 +501,24 @@ class JanelaGerenciarReceitas(tk.Toplevel):
             messagebox.showerror("Erro", "Formato monetário corrompido.", parent=self)
             return
 
-        valor_liquido_calculado = round(val_base_f + enc_f - desc_f, 2)
+        try:
+            pct_op = float(self.ent_encargos_op_pct.get().replace(",", "."))
+        except ValueError:
+            pct_op = 0.0
+        if self.cb_forma.get() in config.FORMAS_CARTAO and pct_op > 0:
+            enc_f = round(enc_f + val_base_f * (pct_op / 100), 2)
+
+        try:
+            valor_liquido_calculado = float(self.ent_valor_liquido.get().replace(",", "."))
+        except ValueError:
+            valor_liquido_calculado = round(val_base_f + enc_f - desc_f, 2)
+
+        parcelas_totais = int(self.ent_parc.get() or 1)
+        if self.cb_forma.get() == "Cartão de Débito":
+            parcelas_totais = 1
+        elif self.cb_forma.get() == "Cartão de Crédito":
+            parcelas_totais = max(1, parcelas_totais)
+
         st = self.cb_status.get()
         if val_pago_f >= valor_liquido_calculado - 0.01:
             st = 'Pago'
@@ -425,16 +530,37 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         with database.conectar() as conn:
             cursor = conn.cursor()
             if self.receita_id:
-                # Modificação via CRUD Direto
                 cursor.execute("""
                     UPDATE financeiro SET cliente_id=?, entidade_nome=?, descricao=?, valor=?, valor_base=?, valor_pago=?,
                                           encargos=?, descontos=?, data_lancamento=?, data_vencimento=?, data_pagamento=?,
-                                          forma_pagamento=?, categoria=?, status=?, recorrencia=?
+                                          forma_pagamento=?, categoria=?, status=?, recorrencia=?,
+                                          total_parcelas=?, valor_encargos=?, tipo_encargos=?
                     WHERE id=? AND tipo='Receita'
-                """, (self.cliente_selecionado_id, nome, desc, valor_liquido_calculado, val_base_f, val_pago_f, enc_f, desc_f,
-                      dat_lan, dat_ven, dat_pag, self.cb_forma.get(), self.cb_cat.get(), st, self.cb_recorrencia.get(), self.receita_id))
+                """, (
+                    self.cliente_selecionado_id, nome, desc, valor_liquido_calculado, val_base_f, val_pago_f,
+                    enc_f, desc_f, dat_lan, dat_ven, dat_pag, self.cb_forma.get(), self.cb_cat.get(), st,
+                    self.cb_recorrencia.get(), parcelas_totais, pct_op, "Porcentagem", self.receita_id,
+                ))
+                if self.venda_id and self.cb_recorrencia.get() == "Parcelado" and parcelas_totais > 1:
+                    self._redistribuir_parcelas_venda(cursor, self.venda_id, valor_liquido_calculado, parcelas_totais)
+                elif self.venda_id:
+                    cursor.execute(
+                        "UPDATE financeiro SET valor=?, valor_base=?, total_parcelas=1 WHERE venda_id=? AND tipo='Receita' AND status!='Pago'",
+                        (valor_liquido_calculado, val_base_f, self.venda_id),
+                    )
+                if self.venda_id and (val_pago_f > 0 or st == "Pago"):
+                    ok_est, msg_est = database.baixar_estoque_venda(self.venda_id, cursor=cursor)
+                    if not ok_est:
+                        conn.rollback()
+                        messagebox.showerror("Estoque", msg_est, parent=self)
+                        return
+                if self.venda_id:
+                    cursor.execute(
+                        "UPDATE vendas SET forma_pagamento=?, qtd_parcelas=?, valor_total=? WHERE id=?",
+                        (self.cb_forma.get(), parcelas_totais, valor_liquido_calculado, self.venda_id),
+                    )
                 conn.commit()
-                messagebox.showinfo("Sucesso", "Título de Receita modificado.", parent=self)
+                messagebox.showinfo("Sucesso", "Recebimento registrado.", parent=self)
             else:
                 messagebox.showwarning(
                     "Receitas",

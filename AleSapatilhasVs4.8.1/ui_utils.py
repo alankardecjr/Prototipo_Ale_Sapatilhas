@@ -13,8 +13,11 @@ gravados no SQLite (constraints CHECK exigem texto exato).
 import calendar
 import os
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, simpledialog
 from datetime import datetime, timedelta
+
+import config
+import database
 
 # --- PALETA DE CORES PADRONIZADA ---
 LARGURA_MODULO_PADRAO = 700
@@ -151,6 +154,43 @@ def criar_style_padrao(root):
 def confirmar(parent, titulo, mensagem):
     """Confirmação Sim/Não padronizada para ações destrutivas ou importantes."""
     return messagebox.askyesno(titulo, mensagem, parent=parent)
+
+
+def solicitar_senha_fluxo(parent, titulo="Fluxo de Caixa"):
+    """Exige senha padrão antes de baixar ou quitar títulos no fluxo de caixa."""
+    senha = simpledialog.askstring(
+        titulo,
+        "Informe a senha para lançar recebimento/pagamento:",
+        parent=parent,
+        show="*",
+    )
+    if senha is None:
+        return False
+    if senha != config.obter_senha_fluxo_caixa():
+        messagebox.showerror("Acesso negado", "Senha incorreta.", parent=parent)
+        return False
+    return True
+
+
+class RastreadorAlteracoes:
+    """Detecta alterações em formulários para confirmar saída apenas se houve edição."""
+
+    def __init__(self, obter_snapshot):
+        self._obter = obter_snapshot
+        self._inicial = obter_snapshot()
+
+    def marcar_limpo(self):
+        self._inicial = self._obter()
+
+    def alterado(self):
+        return self._obter() != self._inicial
+
+
+def confirmar_fechar_formulario(parent, rastreador, titulo="Fechar"):
+    """Pergunta ao usuário somente se o formulário foi modificado."""
+    if rastreador is None or not rastreador.alterado():
+        return True
+    return confirmar(parent, titulo, "Há alterações não salvas. Deseja fechar mesmo assim?")
 
 
 def tipo_produto_para_bd(valor_ui):
@@ -548,154 +588,209 @@ def abrir_calendario_info(parent):
     )
 
 
-def _pasta_notas_salvas():
-    pasta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "notas_salvas")
-    os.makedirs(pasta, exist_ok=True)
-    return pasta
-
-
-def _listar_arquivos_notas():
-    pasta = _pasta_notas_salvas()
-    return sorted(
-        [f for f in os.listdir(pasta) if f.lower().endswith(".txt")],
-        reverse=True,
-    )
-
-
 def abrir_anotacoes(parent):
-    """Anotações: salvar, buscar e excluir arquivos em notas_salvas."""
+    """Anotações no banco: listar (alfabético), buscar por título e salvar."""
     win = tk.Toplevel(parent)
-    win.title("Anotações")
+    win.title("Alê Sapatilhas — Anotações")
     win.configure(bg=PALETA["bg_fundo"])
-    calcular_dimensoes_janela(win, largura_desejada=600, altura_desejada=670)
+    win.transient(parent)
+    calcular_dimensoes_janela(win, largura_desejada=720, altura_desejada=680)
 
-    corpo = tk.Frame(win, bg=PALETA["bg_fundo"], padx=10, pady=8)
-    corpo.pack(fill="both", expand=True)
-    corpo.columnconfigure(1, weight=1)
-    corpo.rowconfigure(1, weight=1)
+    moldura = tk.LabelFrame(
+        win, text=" Anotações ", bg=PALETA["bg_fundo"], fg=PALETA["cor_destaque"],
+        font=("Segoe UI", 10, "bold"), relief="solid", borderwidth=1, padx=12, pady=10,
+    )
+    moldura.pack(fill="both", expand=True, padx=14, pady=14)
+    moldura.columnconfigure(1, weight=1)
+    moldura.rowconfigure(2, weight=1)
 
-    tk.Label(corpo, text="Notas salvas", bg=PALETA["bg_fundo"], font=("Segoe UI", 9, "bold")).grid(
+    tk.Label(moldura, text="Notas salvas", bg=PALETA["bg_fundo"], font=("Segoe UI", 9, "bold")).grid(
         row=0, column=0, sticky="w", pady=(0, 4),
     )
-    lista_frame = tk.Frame(corpo, bg=PALETA["bg_fundo"])
-    lista_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+    lista_frame = tk.Frame(moldura, bg=PALETA["bg_fundo"], highlightthickness=1,
+                           highlightbackground=PALETA["cor_borda"])
+    lista_frame.grid(row=1, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
     scroll = ttk.Scrollbar(lista_frame, orient="vertical")
     lst = tk.Listbox(
-        lista_frame, font=("Segoe UI", 9), height=16, width=28,
-        yscrollcommand=scroll.set, relief="flat",
-        highlightthickness=1, highlightbackground=PALETA["cor_borda"],
+        lista_frame, font=("Segoe UI", 9), height=18, width=26,
+        yscrollcommand=scroll.set, relief="flat", bg=PALETA["bg_card"],
+        highlightthickness=0,
     )
     scroll.config(command=lst.yview)
     scroll.pack(side="right", fill="y")
-    lst.pack(side="left", fill="both", expand=True)
+    lst.pack(side="left", fill="both", expand=True, padx=4, pady=4)
 
-    direita = tk.Frame(corpo, bg=PALETA["bg_fundo"])
-    direita.grid(row=0, column=1, rowspan=2, sticky="nsew")
-    direita.rowconfigure(2, weight=1)
+    direita = tk.Frame(moldura, bg=PALETA["bg_fundo"])
+    direita.grid(row=0, column=1, rowspan=3, sticky="nsew")
     direita.columnconfigure(0, weight=1)
+    direita.rowconfigure(3, weight=1)
 
-    tk.Label(direita, text="Nome da nota", bg=PALETA["bg_fundo"], font=("Segoe UI", 9, "bold")).grid(
+    barra_titulo = tk.Frame(direita, bg=PALETA["bg_fundo"])
+    barra_titulo.grid(row=0, column=0, sticky="ew")
+    barra_titulo.columnconfigure(0, weight=1)
+
+    tk.Label(barra_titulo, text="Título da nota", bg=PALETA["bg_fundo"], font=("Segoe UI", 9, "bold")).grid(
         row=0, column=0, sticky="w",
     )
     ent_nome = tk.Entry(
-        direita, font=("Segoe UI", 10), relief="flat",
+        barra_titulo, font=("Segoe UI", 10), relief="flat", bg=PALETA["bg_card"],
         highlightthickness=1, highlightbackground=PALETA["cor_borda"],
     )
-    ent_nome.grid(row=1, column=0, sticky="ew", pady=(2, 6), ipady=4)
+    ent_nome.grid(row=1, column=0, sticky="ew", pady=(2, 0), ipady=4)
     ent_nome.insert(0, datetime.now().strftime("nota_%Y%m%d_%H%M%S"))
 
-    txt = tk.Text(
-        direita, font=("Segoe UI", 10), wrap="word", relief="flat",
+    tk.Label(barra_titulo, text="Buscar", bg=PALETA["bg_fundo"], font=("Segoe UI", 9, "bold")).grid(
+        row=0, column=1, sticky="w", padx=(10, 0),
+    )
+    ent_buscar = tk.Entry(
+        barra_titulo, font=("Segoe UI", 10), width=18, relief="flat", bg=PALETA["bg_card"],
         highlightthickness=1, highlightbackground=PALETA["cor_borda"],
     )
-    txt.grid(row=2, column=0, sticky="nsew")
+    ent_buscar.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=(2, 0), ipady=4)
 
-    def atualizar_lista(selecionar=None):
-        lst.delete(0, tk.END)
-        arquivos = _listar_arquivos_notas()
-        for arq in arquivos:
-            lst.insert(tk.END, arq)
-        if selecionar and selecionar in arquivos:
-            idx = arquivos.index(selecionar)
-            lst.selection_set(idx)
-            lst.see(idx)
+    tk.Label(direita, text="Conteúdo", bg=PALETA["bg_fundo"], font=("Segoe UI", 9, "bold")).grid(
+        row=2, column=0, sticky="w", pady=(8, 2),
+    )
+    txt = tk.Text(
+        direita, font=("Segoe UI", 10), wrap="word", relief="flat", bg=PALETA["bg_card"],
+        highlightthickness=1, highlightbackground=PALETA["cor_borda"],
+    )
+    txt.grid(row=3, column=0, sticky="nsew")
 
-    def caminho_nota(nome):
-        n = nome.strip()
-        if not n.lower().endswith(".txt"):
-            n += ".txt"
-        return os.path.join(_pasta_notas_salvas(), n)
+    estado = {"anotacao_id": None}
 
-    def salvar_nota():
-        nome = ent_nome.get().strip() or datetime.now().strftime("nota_%Y%m%d_%H%M%S")
-        caminho = caminho_nota(nome)
-        with open(caminho, "w", encoding="utf-8") as f:
-            f.write(txt.get("1.0", tk.END).strip())
+    def preencher_form(row):
+        if not row:
+            return
+        estado["anotacao_id"] = row[0]
         ent_nome.delete(0, tk.END)
-        ent_nome.insert(0, os.path.basename(caminho))
-        atualizar_lista(os.path.basename(caminho))
-        messagebox.showinfo("Anotações", "Nota salva com sucesso.", parent=win)
-
-    def buscar_nota():
-        sel = lst.curselection()
-        if sel:
-            nome = lst.get(sel[0])
-        else:
-            nome = ent_nome.get().strip()
-        if not nome:
-            messagebox.showwarning("Anotações", "Selecione ou informe o nome da nota.", parent=win)
-            return
-        caminho = caminho_nota(nome)
-        if not os.path.isfile(caminho):
-            messagebox.showwarning("Anotações", "Arquivo não encontrado.", parent=win)
-            return
-        with open(caminho, "r", encoding="utf-8") as f:
-            conteudo = f.read()
+        ent_nome.insert(0, row[1])
         txt.delete("1.0", tk.END)
-        txt.insert("1.0", conteudo)
-        ent_nome.delete(0, tk.END)
-        ent_nome.insert(0, os.path.basename(caminho))
+        txt.insert("1.0", row[2] or "")
 
-    def excluir_nota():
+    def atualizar_lista(registros=None):
+        lst.delete(0, tk.END)
+        dados = registros if registros is not None else database.listar_anotacoes(ordem_alfabetica=True)
+        for row in dados:
+            lst.insert(tk.END, row[1])
+
+    def listar_todas():
+        ent_buscar.delete(0, tk.END)
+        atualizar_lista()
+        messagebox.showinfo("Anotações", f"{lst.size()} nota(s) carregada(s) do banco.", parent=win)
+
+    def buscar_por_titulo():
+        termo = ent_buscar.get().strip()
+        if not termo:
+            listar_todas()
+            return
+        rows = database.buscar_anotacao_por_titulo(termo)
+        atualizar_lista(rows)
+        if not rows:
+            messagebox.showinfo("Anotações", "Nenhuma nota encontrada.", parent=win)
+
+    def carregar_selecionada():
         sel = lst.curselection()
         if not sel:
-            messagebox.showwarning("Anotações", "Selecione uma nota na lista para excluir.", parent=win)
+            termo = ent_buscar.get().strip() or ent_nome.get().strip()
+            if termo:
+                rows = database.buscar_anotacao_por_titulo(termo)
+                if rows:
+                    preencher_form(rows[0])
             return
-        nome = lst.get(sel[0])
-        if not confirmar(win, "Excluir nota", f"Excluir permanentemente:\n{nome}?"):
+        titulo = lst.get(sel[0])
+        rows = database.buscar_anotacao_por_titulo(titulo)
+        if rows:
+            preencher_form(rows[0])
+
+    def salvar_nota():
+        ok, msg = database.salvar_anotacao(
+            ent_nome.get().strip(),
+            txt.get("1.0", tk.END).strip(),
+            estado["anotacao_id"],
+        )
+        if ok:
+            if not estado["anotacao_id"]:
+                rows = database.buscar_anotacao_por_titulo(ent_nome.get().strip())
+                if rows:
+                    estado["anotacao_id"] = rows[0][0]
+            listar_todas()
+            messagebox.showinfo("Anotações", msg, parent=win)
+        else:
+            messagebox.showwarning("Anotações", msg, parent=win)
+
+    def excluir_nota():
+        if not estado["anotacao_id"]:
+            carregar_selecionada()
+        if not estado["anotacao_id"]:
+            messagebox.showwarning("Anotações", "Selecione uma nota para excluir.", parent=win)
             return
-        try:
-            os.remove(caminho_nota(nome))
-            txt.delete("1.0", tk.END)
-            ent_nome.delete(0, tk.END)
-            ent_nome.insert(0, datetime.now().strftime("nota_%Y%m%d_%H%M%S"))
-            atualizar_lista()
-            messagebox.showinfo("Anotações", "Nota excluída.", parent=win)
-        except OSError as e:
-            messagebox.showerror("Anotações", f"Não foi possível excluir: {e}", parent=win)
+        if not confirmar(win, "Excluir nota", "Excluir esta nota permanentemente?"):
+            return
+        database.excluir_anotacao(estado["anotacao_id"])
+        estado["anotacao_id"] = None
+        ent_nome.delete(0, tk.END)
+        ent_nome.insert(0, datetime.now().strftime("nota_%Y%m%d_%H%M%S"))
+        txt.delete("1.0", tk.END)
+        listar_todas()
+        messagebox.showinfo("Anotações", "Nota excluída.", parent=win)
 
-    lst.bind("<Double-1>", lambda _e: buscar_nota())
+    lst.bind("<Double-1>", lambda _e: carregar_selecionada())
+    ent_buscar.bind("<Return>", lambda _e: buscar_por_titulo())
 
-    rodape = tk.Frame(win, bg=PALETA["bg_fundo"], padx=10, pady=8)
-    rodape.pack(fill="x")
+    rodape = tk.Frame(moldura, bg=PALETA["bg_fundo"])
+    rodape.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
     rodape.columnconfigure((0, 1, 2), weight=1, uniform="notas_btn")
     criar_botao_rodape(rodape, "Salvar Nota", salvar_nota, "acao1").grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=6)
-    criar_botao_rodape(rodape, "Buscar Nota", buscar_nota, "acao2").grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
+    criar_botao_rodape(rodape, "Listar", listar_todas, "acao2").grid(row=0, column=1, sticky="ew", padx=4, ipady=6)
     criar_botao_rodape(rodape, "Excluir Nota", excluir_nota, "sair").grid(row=0, column=2, sticky="ew", padx=(4, 0), ipady=6)
 
-    atualizar_lista()
+    listar_todas()
 
 
 def abrir_configuracoes(parent):
-    """Placeholder para futuras configurações (impressora, tema, etc.)."""
-    messagebox.showinfo(
-        "Configurações",
-        "Módulo de configurações reservado para versões futuras.\n"
-        "• Impressora de recibos\n"
-        "• Backup automático\n"
-        "• Tema e cores",
-        parent=parent,
+    """Configurações locais: senha do fluxo de caixa e orientações."""
+    win = tk.Toplevel(parent)
+    win.title("Configurações")
+    win.configure(bg=PALETA["bg_fundo"])
+    win.transient(parent)
+    calcular_dimensoes_janela(win, largura_desejada=480, altura_desejada=320)
+
+    frame = tk.LabelFrame(
+        win, text=" Segurança — Fluxo de caixa ", bg=PALETA["bg_fundo"],
+        fg=PALETA["cor_destaque"], font=("Segoe UI", 10, "bold"),
+        relief="solid", borderwidth=1, padx=12, pady=10,
     )
+    frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+    aviso = (
+        "A senha fica em secrets.local.json (não vai para o Git).\n"
+        f"Arquivo: {config.SECRETS_PATH}"
+    )
+    if not config.secrets_configurado():
+        aviso += "\n\n⚠ Usando senha padrão de instalação. Defina uma senha abaixo."
+
+    tk.Label(frame, text=aviso, bg=PALETA["bg_fundo"], font=("Segoe UI", 9),
+             justify="left", wraplength=420).pack(anchor="w", pady=(0, 10))
+
+    tk.Label(frame, text="Nova senha do fluxo de caixa", bg=PALETA["bg_fundo"],
+             font=("Segoe UI", 9, "bold")).pack(anchor="w")
+    ent = tk.Entry(frame, font=("Segoe UI", 10), show="*", relief="flat",
+                   highlightthickness=1, highlightbackground=PALETA["cor_borda"])
+    ent.pack(fill="x", ipady=4, pady=(4, 8))
+
+    def salvar():
+        ok, msg = config.salvar_senha_fluxo_caixa(ent.get())
+        if ok:
+            messagebox.showinfo("Configurações", msg, parent=win)
+            win.destroy()
+        else:
+            messagebox.showwarning("Configurações", msg, parent=win)
+
+    rodape = tk.Frame(win, bg=PALETA["bg_fundo"], padx=16, pady=8)
+    rodape.pack(fill="x")
+    criar_botao_rodape(rodape, "Salvar senha", salvar, "acao1").pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 4))
+    criar_botao_rodape(rodape, "Fechar", win.destroy, "sair").pack(side="left", fill="x", expand=True, ipady=6)
 
 
 def filtro_data_periodo(opcao, data_str):

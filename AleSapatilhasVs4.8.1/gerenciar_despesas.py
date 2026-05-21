@@ -60,9 +60,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         
         if dados_despesa:
             self.preencher_dados(dados_despesa)
-        else:
-            self.pesquisar_fornecedores()
-            
+
         self.grab_set()
 
     def setup_styles(self):
@@ -249,36 +247,6 @@ class JanelaGerenciarDespesas(tk.Toplevel):
             self.ent_parc.insert(0, "1")
         self.atualizar_calculos()
 
-    # pesquisar e selecionar fornecedores para vincular à despesa
-    def pesquisar_fornecedores(self, event=None):
-        termo = self.ent_busca_forn.get().lower()
-        if termo == self.placeholder_busca.lower(): termo = ""
-        self.tree_forn.delete(*self.tree_forn.get_children())
-        
-        with database.conectar() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, nome, telefone, status_cliente FROM clientes WHERE tipo='Fornecedor' AND (nome LIKE ? OR telefone LIKE ?)", (f"%{termo}%", f"%{termo}%"))
-            for f in cursor.fetchall():
-                self.tree_forn.insert("", "end", values=f)
-
-    def selecionar_fornecedor(self, event=None):
-        sel = self.tree_forn.selection()
-        if not sel: return
-        dados = self.tree_forn.item(sel[0], "values")
-        self.fornecedor_selecionado_id = dados[0]
-        
-        with database.conectar() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT cpf, email, endereco_completo, observacao FROM clientes WHERE id=?", (self.fornecedor_selecionado_id,))
-            extra = cursor.fetchone()
-        
-        self.ent_forn_nome.delete(0, tk.END)
-        self.ent_forn_nome.insert(0, dados[1])
-        
-        txt = f"Razão/Nome: {dados[1]} | Tel: {dados[2]} | Doc: {extra[0] or 'N/A'}\nEndereço: {extra[2] or 'N/A'}"
-        self.lbl_detalhes_contato.config(text=txt, font=("Segoe UI", 9, "bold"), fg=self.cor_texto)
-
-
     def atualizar_calculos(self):
         try:
             v_base = float(self.ent_valor_base.get().replace(",", ".")) if self.ent_valor_base.get().strip() else 0.0
@@ -358,7 +326,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.carregar_parcelas_historico(d[5], d[6])
 
     def validar_e_salvar(self):
-        if ui_utils.confirmar(self, "Confirmar", "Deseja salvar esta despesa?"):
+        if ui_utils.solicitar_senha_fluxo(self):
             self.salvar_crud()
 
     def salvar_crud(self):

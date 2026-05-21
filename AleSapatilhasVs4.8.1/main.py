@@ -249,8 +249,8 @@ class SistemaAleSapatilhas:
         """Retorna índices de colunas (valores) conforme o modo da lista."""
         mapa = {
             "clientes": {"tipo": 0, "status": 7, "data": 4},
-            "produtos": {"status": 8},
-            "vendas": {"status": 4, "data": 3},
+            "produtos": {"tipo": 1, "status": 9},
+            "vendas": {"tipo": 1, "status": 5, "data": 4},
             "financeiro": {"tipo": 0, "status": 9, "data": 4},
             "contas_receber": {"status": 6, "data": 5},
             "contas_pagar": {"status": 6, "data": 5},
@@ -424,8 +424,6 @@ class SistemaAleSapatilhas:
 
     def _filtrar_por_campo(self, chave_filtro, valor, idx_col):
         """Filtra a lista exibida por valor em uma coluna (tipo ou status)."""
-        if not ui_utils.confirmar(self.root, "Filtrar", f"Aplicar filtro {chave_filtro} = '{valor}'?"):
-            return
         termo = str(valor).lower()
         filtrado = [(iid, v) for iid, v in self._cache_lista if termo in str(v[idx_col]).lower()]
         self._filtros_ativos[chave_filtro] = valor
@@ -459,16 +457,12 @@ class SistemaAleSapatilhas:
         else:
             filtrado = [(iid, v) for iid, v in self._cache_lista if ui_utils.filtro_data_periodo(modo, v[idx_col])]
 
-        if not ui_utils.confirmar(self.root, "Filtrar", f"Aplicar filtro de data: {modo}?"):
-            return
         self._filtros_ativos["data"] = modo
         self._pilha_vistas = []
         self._renderizar_cache(filtrado)
 
     def limpar_busca_e_filtros(self):
         """Zera busca, filtros e pilha; recarrega a lista do modo atual."""
-        if not ui_utils.confirmar(self.root, "Limpar", "Limpar busca e filtros da lista?"):
-            return
         self.ent_busca.delete(0, tk.END)
         self._inserir_placeholder(None)
         self._filtros_ativos = {}
@@ -538,9 +532,12 @@ class SistemaAleSapatilhas:
         self.botao_menu_ativo = self.botoes_por_texto.get("👠 GERENCIAR PRODUTOS")
         self.atualizar_destaque_menu()
         self.lbl_titulo.config(text="👠 ESTOQUE")
-        self.preparar_colunas(("sku", "produto", "material", "cor", "tamanho", "estoque", "preço", "fornecedor", "status"))
+        self.preparar_colunas(("sku", "tipo", "produto", "material", "cor", "tamanho", "estoque", "preço", "fornecedor", "status"))
         for i in database.exibir_produtos_com_fornecedor():
-            self.tree.insert("", "end", iid=i[0], values=(i[1], i[3], i[10], i[4], i[5], i[8], f"R$ {i[7]:.2f}", i[11], i[12]))
+            tipo_ui = ui_utils.tipo_produto_para_ui(i[2])
+            self.tree.insert("", "end", iid=i[0], values=(
+                i[1], tipo_ui, i[3], i[10], i[4], i[5], i[8], f"R$ {i[7]:.2f}", i[11], i[12],
+            ))
         self._atualizar_cache_lista()
 
     def exibir_vendas(self):
@@ -549,9 +546,12 @@ class SistemaAleSapatilhas:
         self.botao_menu_ativo = self.botoes_por_texto.get("📑 GERENCIAR VENDAS")
         self.atualizar_destaque_menu()
         self.lbl_titulo.config(text="📑 VENDAS")
-        self.preparar_colunas(("cliente", "total", "forma", "data", "status"))
+        self.preparar_colunas(("tipo", "cliente", "total", "forma", "data", "status"))
         for v in database.relatorio_vendas_geral():
-            self.tree.insert("", "end", iid=v[0], values=(v[1], f"R$ {v[2]:.2f}", v[3], self.formatar_data_exibicao(v[5]), v[7]))
+            tipo_ui = ui_utils.tipo_produto_para_ui(v[8]) if len(v) > 8 else "—"
+            self.tree.insert("", "end", iid=v[0], values=(
+                tipo_ui, v[1], f"R$ {v[2]:.2f}", v[3], self.formatar_data_exibicao(v[5]), v[7],
+            ))
         self._atualizar_cache_lista()
 
     def exibir_financeiro(self):
@@ -675,16 +675,22 @@ class SistemaAleSapatilhas:
                     self.exibir_produtos()
 
         elif self.modo_atual == "financeiro":
-            self.editar_financeiro_registro()
+            self._abrir_financeiro_com_senha()
 
         elif self.modo_atual == "contas_receber":
-            self.editar_financeiro_registro()
+            self._abrir_financeiro_com_senha()
 
         elif self.modo_atual == "contas_pagar":
-            self.editar_financeiro_registro()
+            self._abrir_financeiro_com_senha()
 
         elif self.modo_atual == "vendas":
             self.editar_venda()
+
+    def _abrir_financeiro_com_senha(self):
+        """Baixa de título somente após senha do fluxo de caixa."""
+        if not ui_utils.solicitar_senha_fluxo(self.root):
+            return
+        self.editar_financeiro_registro()
 
     def editar_financeiro_registro(self):
         """Roteamento: tipo do título define qual módulo financeiro abrir."""
@@ -729,9 +735,9 @@ class SistemaAleSapatilhas:
                 valores = self.tree.item(item, "values")
                 tipo_reg = valores[0] if valores else "Registro"
                 if tipo_reg == "Receita":
-                    menu.add_command(label="Receber / Baixar parcela", command=self.editar_financeiro_registro)
+                    menu.add_command(label="Receber / Baixar parcela", command=self._abrir_financeiro_com_senha)
                 else:
-                    menu.add_command(label="Pagar / Editar despesa", command=self.editar_financeiro_registro)
+                    menu.add_command(label="Pagar / Editar despesa", command=self._abrir_financeiro_com_senha)
                 menu.add_command(label=f"Visualizar {tipo_reg}", command=self.visualizar_despesa)
                 menu.add_separator()
                 for status in ["✓ Pago", "◎ Pendente", "⚠ Atrasado", "✗ Cancelado"]:
@@ -746,11 +752,11 @@ class SistemaAleSapatilhas:
                     menu.add_command(label=status, command=lambda s=status: self._mudar_status_venda(s))
 
             elif self.modo_atual == "contas_receber":
-                menu.add_command(label="Baixar / Receber parcela", command=self.editar_financeiro_registro)
+                menu.add_command(label="Baixar / Receber parcela", command=self._abrir_financeiro_com_senha)
                 menu.add_command(label="Visualizar título", command=self.visualizar_despesa)
 
             elif self.modo_atual == "contas_pagar":
-                menu.add_command(label="Pagar / Editar despesa", command=self.editar_financeiro_registro)
+                menu.add_command(label="Pagar / Editar despesa", command=self._abrir_financeiro_com_senha)
                 menu.add_command(label="Visualizar título", command=self.visualizar_despesa)
 
             menu.post(event.x_root, event.y_root)
@@ -811,6 +817,8 @@ class SistemaAleSapatilhas:
     def abrir_financeiro_venda(self):
         item = self.tree.selection()
         if not item:
+            return
+        if not ui_utils.solicitar_senha_fluxo(self.root):
             return
         from gerenciar_receitas import JanelaGerenciarReceitas
         JanelaGerenciarReceitas(self.root, venda_id=item[0])
@@ -891,6 +899,14 @@ class SistemaAleSapatilhas:
                     self.exibir_vendas()
                 else:
                     messagebox.showerror("Erro", msg)
+            return
+        if st == config.STATUS_VENDA_FINALIZADA:
+            messagebox.showinfo(
+                "Vendas",
+                "Para finalizar a venda, registre o pagamento em Gerenciar Receitas.\n"
+                "O estoque só é baixado após a confirmação do pagamento.",
+                parent=self.root,
+            )
             return
         if messagebox.askyesno("Confirmar", f"Mudar status da venda para {st}?"):
             with database.conectar() as conn:
@@ -1089,14 +1105,47 @@ Recorrência: {recorrencia or 'Não Recorrente'}
         tk.Button(frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white", font=("Segoe UI", 10, "bold"), command=janela.destroy).pack(pady=10)
 
     def visualizar_item(self):
+        """Exibe ficha do produto (centralizado no shell principal)."""
         item = self.tree.selection()
-        if item:
-            from cadastro_produtos import VisualizarProduto
-            with database.conectar() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM produtos WHERE id = ?", (item[0],))
-                dados = cursor.fetchone()
-                if dados: VisualizarProduto(self.root, dados)
+        if not item:
+            return
+        with database.conectar() as conn:
+            dados = conn.execute("SELECT * FROM produtos WHERE id = ?", (item[0],)).fetchone()
+        if not dados:
+            return
+
+        janela = tk.Toplevel(self.root)
+        janela.title("Alê Sapatilhas — Detalhes do Produto")
+        janela.configure(bg=self.bg_fundo)
+        janela.transient(self.root)
+        janela.grab_set()
+        ui_utils.calcular_dimensoes_janela(janela, largura_desejada=560, altura_desejada=620)
+
+        frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
+        frame.pack(fill="both", expand=True)
+
+        tipo_ui = ui_utils.tipo_produto_para_ui(dados[2])
+        info_text = f"""
+SKU: {dados[1] or 'N/A'}
+Tipo: {tipo_ui}
+Produto: {dados[3]}
+Cor: {dados[4]}
+Tamanho: {dados[5]}
+Preço de Custo: R$ {float(dados[6] or 0):.2f}
+Preço de Venda: R$ {float(dados[7] or 0):.2f}
+Quantidade em Estoque: {dados[8]}
+Categoria: {dados[9] or 'N/A'}
+Material: {dados[10] or 'N/A'}
+Fornecedor: {dados[11] or 'N/A'}
+Status: {dados[12]}
+        """
+        tk.Label(frame, text="📦 DETALHES DO PRODUTO", bg=self.bg_fundo, fg=self.cor_destaque,
+                 font=("Segoe UI", 14, "bold")).pack(pady=(0, 15))
+        tk.Label(frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto,
+                 font=("Courier New", 10), justify="left", relief="solid", borderwidth=1,
+                 padx=10, pady=10).pack(fill="both", expand=True, pady=(0, 15))
+        tk.Button(frame, text="FECHAR", bg=self.cor_destaque, fg="white",
+                  font=("Segoe UI", 10, "bold"), command=janela.destroy).pack()
 
     # --- Função para atualizar a lista exibida com base no modo atual, garantindo que as alterações sejam refletidas imediatamente após ações de edição ou status ---
     def atualizar_lista(self):
