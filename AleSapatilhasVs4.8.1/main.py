@@ -105,17 +105,19 @@ class SistemaAleSapatilhas:
 
         # (texto, callback, modo) — modo agrupa telas relacionadas na Treeview
         botoes = [
-            ("➕ GERAR VENDAS", self.abrir_cadastro_vendas, "vendas"),
+            ("➕ NOVA VENDAS", self.abrir_cadastro_vendas, "vendas"),
             #("💰 GERAR RECEITAS", self.abrir_gerenciar_receitas, "financeiro"),
-            ("📑 GERENCIAR VENDAS", self.exibir_vendas, "vendas"),
-            ("👥 GERENCIAR CONTATOS", self.exibir_clientes, "clientes"),
-            ("👠 GERENCIAR PRODUTOS", self.exibir_produtos, "produtos"),
-            ("👤 ADICIONAR CONTATOS", self.abrir_cadastro_cliente, "clientes"),
-            ("📦 ADICIONAR PRODUTOS", self.abrir_cadastro_produto, "produtos"),
-            ("💸 ADICIONAR DESPESAS", self.abrir_gerenciar_despesas, "financeiro"),           
+            ("", None, None),
+            ("📑 LISTAR VENDAS", self.exibir_vendas, "vendas"),
+            ("👥 LISTAR CONTATOS", self.exibir_clientes, "clientes"),
+            ("👠 LISTAR PRODUTOS", self.exibir_produtos, "produtos"),
+            ("👤 NOVO CONTATOS", self.abrir_cadastro_cliente, "clientes"),
+            ("📦 NOVO PRODUTOS", self.abrir_cadastro_produto, "produtos"),
+            ("💸 NOVA DESPESAS", self.abrir_gerenciar_despesas, "financeiro"),
+            ("", None, None),
+            ("📉 FLUXO DE CAIXA", self.exibir_financeiro, "financeiro"),
             ("📥 CONTAS A RECEBER", self.exibir_contas_a_receber, "contas_receber"),
             ("📤 CONTAS A PAGAR", self.exibir_contas_a_pagar, "contas_pagar"),
-            ("📉 FLUXO DE CAIXA", self.exibir_financeiro, "financeiro"),
             ("📊 DASHBOARD", self.exibir_dashboard, "dashboard"),
             ("🔄 ATUALIZAR", self.atualizar_lista, None),
             ("", None, None),
@@ -517,9 +519,9 @@ class SistemaAleSapatilhas:
     def exibir_clientes(self):
         """Carrega e exibe a lista de contatos (clientes/fornecedores)."""
         self.modo_atual = "clientes"
-        self.botao_menu_ativo = self.botoes_por_texto.get("👥 GERENCIAR CONTATOS")
+        self.botao_menu_ativo = self.botoes_por_texto.get("👥 LISTAR CONTATOS")
         self.atualizar_destaque_menu()
-        self.lbl_titulo.config(text="👥 CONTATOS")
+        self.lbl_titulo.config(text="👥 AGENDA DOS CONTATOS")
         self.preparar_colunas(("tipo", "nome", "cpf/cnpj", "telefone", "aniversario", "calcado", "limite", "status"))    
         for c in database.exibir_clientes():
             # c[1]=tipo, c[2]=nome, c[3]=cpf, c[4]=telefone, c[6]=aniversario, c[7]=calcado, c[13]=limite, c[15]=status
@@ -529,9 +531,9 @@ class SistemaAleSapatilhas:
     def exibir_produtos(self):
         """Carrega e exibe o estoque de produtos com fornecedor."""
         self.modo_atual = "produtos"
-        self.botao_menu_ativo = self.botoes_por_texto.get("👠 GERENCIAR PRODUTOS")
+        self.botao_menu_ativo = self.botoes_por_texto.get("👠 LISTAR PRODUTOS")
         self.atualizar_destaque_menu()
-        self.lbl_titulo.config(text="👠 ESTOQUE")
+        self.lbl_titulo.config(text="👠 CONTROLE DO ESTOQUE")
         self.preparar_colunas(("sku", "tipo", "produto", "material", "cor", "tamanho", "estoque", "preço", "fornecedor", "status"))
         for i in database.exibir_produtos_com_fornecedor():
             tipo_ui = ui_utils.tipo_produto_para_ui(i[2])
@@ -543,9 +545,9 @@ class SistemaAleSapatilhas:
     def exibir_vendas(self):
         """Carrega e exibe o relatório de vendas."""
         self.modo_atual = "vendas"
-        self.botao_menu_ativo = self.botoes_por_texto.get("📑 GERENCIAR VENDAS")
+        self.botao_menu_ativo = self.botoes_por_texto.get("📑 LISTAR VENDAS")
         self.atualizar_destaque_menu()
-        self.lbl_titulo.config(text="📑 VENDAS")
+        self.lbl_titulo.config(text="📑 HISTORICO DE VENDAS")
         self.preparar_colunas(("tipo", "cliente", "total", "forma", "data", "status"))
         for v in database.relatorio_vendas_geral():
             tipo_ui = ui_utils.tipo_produto_para_ui(v[8]) if len(v) > 8 else "—"
@@ -559,7 +561,7 @@ class SistemaAleSapatilhas:
         self.modo_atual = "financeiro"
         self.botao_menu_ativo = self.botoes_por_texto.get("📉 FLUXO DE CAIXA")
         self.atualizar_destaque_menu()
-        self.lbl_titulo.config(text="💸 FLUXO DE CAIXA")
+        self.lbl_titulo.config(text="💸 FLUXO DE CAIXA (ENTRADAS / SAIDAS)")
         self.preparar_colunas(("tipo", "nome", "descrição", "valor", "vencimento", "pagamento", "forma", "categoria", "recorrencia", "status"))
         for f in database.obter_todos_registros_financeiros():
             tag = ("cancelado",) if f[10] == "Cancelado" else ()
@@ -591,7 +593,7 @@ class SistemaAleSapatilhas:
         self.modo_atual = "contas_receber"
         self.botao_menu_ativo = self.botoes_por_texto.get("📥 CONTAS A RECEBER")
         self.atualizar_destaque_menu()
-        self.lbl_titulo.config(text="📥 CONTAS A RECEBER")
+        self.lbl_titulo.config(text="📥 HISTORICO DE CONTAS A RECEBER")
         self.preparar_colunas(("cliente", "descrição", "valor", "pago", "saldo", "vencimento", "status"))
         for row in database.listar_titulos_abertos(config.TIPO_RECEITA):
             _id, nome, desc, valor, pago, venc, status, saldo = row
@@ -606,7 +608,7 @@ class SistemaAleSapatilhas:
         self.modo_atual = "contas_pagar"
         self.botao_menu_ativo = self.botoes_por_texto.get("📤 CONTAS A PAGAR")
         self.atualizar_destaque_menu()
-        self.lbl_titulo.config(text="📤 CONTAS A PAGAR")
+        self.lbl_titulo.config(text="📤 HISTORICO DE CONTAS A PAGAR")
         self.preparar_colunas(("fornecedor", "descrição", "valor", "pago", "saldo", "vencimento", "status"))
         for row in database.listar_titulos_abertos(config.TIPO_DESPESA):
             _id, nome, desc, valor, pago, venc, status, saldo = row

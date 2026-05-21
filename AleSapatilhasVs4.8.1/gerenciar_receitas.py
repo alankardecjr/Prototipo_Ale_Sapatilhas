@@ -150,15 +150,15 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.ent_desc = criar_campo_form("IDENTIFICAÇÃO / ORIGEM*", 0, 2, c_span=1)
 
         # Valores e Fluxo Financeiro de Auditoria
-        self.ent_valor_base = criar_campo_form("VALOR ORIGINAL VENDA (R$)*", 2, 0)
+        self.ent_valor_base = criar_campo_form("VALOR DA VENDA (R$)*", 2, 0)
         self.ent_valor_base.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
         
-        self.ent_encargos = criar_campo_form("JUROS / MULTA (R$)", 2, 1)
+        self.ent_encargos = criar_campo_form("JUROS/MULTA (R$)", 2, 1)
         self.ent_encargos.insert(0, "0.00")
         self.ent_encargos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
         ui_utils.anexar_botao_calculadora(form_frame, self.ent_encargos, row=3, column=1, sticky="e")
 
-        self.ent_descontos = criar_campo_form("DESCONTO CONCEDIDO (R$)", 2, 2)
+        self.ent_descontos = criar_campo_form("DESCONTOS (R$)", 2, 2)
         self.ent_descontos.insert(0, "0.00")
         self.ent_descontos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
         ui_utils.anexar_botao_calculadora(form_frame, self.ent_descontos, row=3, column=2, sticky="e")
@@ -170,7 +170,7 @@ class JanelaGerenciarReceitas(tk.Toplevel):
         self.ent_valor_liquido = criar_campo_form("VALOR LÍQUIDO (FINANCEIRO)*", 4, 1)
         self.ent_valor_liquido.bind("<KeyRelease>", lambda e: self._liquido_manual())
 
-        self.ent_valor_pago = criar_campo_form("AMORTIZAÇÃO / VALOR AMORTIZADO", 4, 2)
+        self.ent_valor_pago = criar_campo_form("VALOR PAGO (R$)*", 4, 2)
         self.ent_valor_pago.insert(0, "0.00")
         self.ent_valor_pago.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
 

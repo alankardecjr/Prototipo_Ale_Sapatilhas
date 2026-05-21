@@ -136,14 +136,14 @@ class JanelaGerenciarDespesas(tk.Toplevel):
             self.aplicar_estilo_foco(ent)
             return ent
 
-        self.ent_forn_nome = criar_campo_form("FORNECEDOR (opcional)", 0, 0, c_span=2)
+        self.ent_forn_nome = criar_campo_form("FORNECEDOR NOMINAL*", 0, 0, c_span=2)
         self.ent_desc = criar_campo_form("DESCRIÇÃO DA DESPESA*", 0, 2, c_span=1)
 
         # Valores, Ajustes de Encargos/Descontos e Pagamentos Parciais
         self.ent_valor_base = criar_campo_form("VALOR BASE (R$)*", 2, 0)
         self.ent_valor_base.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
         
-        self.ent_encargos = criar_campo_form("ENCARGOS / JUROS (R$)", 2, 1)
+        self.ent_encargos = criar_campo_form("JUROS/MULTA (R$)", 2, 1)
         self.ent_encargos.insert(0, "0.00")
         self.ent_encargos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
         ui_utils.anexar_botao_calculadora(form_frame, self.ent_encargos, row=3, column=1, sticky="e")
@@ -153,7 +153,7 @@ class JanelaGerenciarDespesas(tk.Toplevel):
         self.ent_descontos.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
         ui_utils.anexar_botao_calculadora(form_frame, self.ent_descontos, row=3, column=2, sticky="e")
 
-        self.ent_valor_pago = criar_campo_form("VALOR PAGO (PARCIAL/TOTAL)", 4, 0)
+        self.ent_valor_pago = criar_campo_form("VALOR PAGO", 4, 0)
         self.ent_valor_pago.insert(0, "0.00")
         self.ent_valor_pago.bind("<KeyRelease>", lambda e: self.atualizar_calculos())
 
