@@ -748,14 +748,12 @@ class SistemaAleSapatilhas:
                     menu.add_command(label=status, command=lambda s=status: self._mudar_status_despesa(s))
                 
             elif self.modo_atual == "vendas":
-                menu.add_command(label="Editar itens da venda", command=self.editar_venda)
+                menu.add_command(label="Editar venda", command=self.editar_venda)
                 menu.add_command(label="Financeiro / Receber", command=self.abrir_financeiro_venda)
                 menu.add_command(label="Visualizar Venda", command=self.visualizar_venda)
-
-                # --- Desativado por enquanto, pois o status de venda é mais complexo e pode exigir lógica adicional (ex.: só permitir "Finalizada" se tiver itens e pagamento registrado) ---
-                #menu.add_separator()
-                #for status in [ "⏳ Pendente","✓ Finalizada", "✗ Cancelada"]:
-                #menu.add_command(label=status, command=lambda s=status: self._mudar_status_venda(s))
+                menu.add_separator()
+                for status in [ "⏳ Pendente","✓ Finalizada", "✗ Cancelada"]:
+                    menu.add_command(label=status, command=lambda s=status: self._mudar_status_venda(s))
 
             elif self.modo_atual == "contas_receber":
                 menu.add_command(label="Baixar / Receber parcela", command=self._abrir_financeiro_com_senha)
@@ -950,6 +948,7 @@ class SistemaAleSapatilhas:
     
     # --- Função de visualização detalhada para vendas, que abre uma janela mostrando um resumo completo da venda selecionada, incluindo itens, cliente, forma de pagamento e status ---
     def visualizar_venda(self):
+        """Correção crítica: Instancia um tk.Toplevel em vez de chamar self.title."""
         item = self.tree.selection()
         if not item: return
         id_venda = item[0]
