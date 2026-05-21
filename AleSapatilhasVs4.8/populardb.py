@@ -11,7 +11,7 @@ import random
 from datetime import datetime
 
 def popular_banco():
-    print("=== Iniciando Povoamento do Banco de Dados Ale Sapatilhas Vs4.8.1 ===")
+    print("=== Iniciando Povoamento do Banco de Dados Ale Sapatilhas Vs4.8 ===")
     database.criar_tabelas()
 
     # --- Limpeza Controlada ---
@@ -31,11 +31,6 @@ def popular_banco():
         ("Fábrica A", "00111222000199", "11977776661", "contato@fabrical.com"),
         ("Fábrica B", "00111222000198", "11977776662", "contato@fabricab.com"),
         ("Fábrica C", "00111222000197", "11977776663", "contato@fabricac.com"),
-        ("Fábrica D", "00111222000196", "11977776664", "contato@fabricad.com"),
-        ("Fábrica E", "00111222000195", "11977776665", "contato@fabricae.com"),
-        ("Fábrica F", "00111222000194", "11977776666", "contato@fabricaf.com"),
-        ("Fábrica G", "00111222000193", "11977776667", "contato@fabricag.com"),
-        ("Fábrica H", "00111222000192", "11977776668", "contato@fabricah.com"),
         ("Imobiliária", "00111222000191", "1133334444", "aluguel@imobiliaria.com"),
         ("Coelba", "00111222000190", "08000112233", "atendimento@coelba.com"),
         ("Vivo", "00111222000189", "1058", "empresas@vivo.com"),
@@ -164,7 +159,7 @@ def popular_banco():
         if id_rec_row:
             database.quitar_titulo_financeiro(id_rec_row[0], "Pix")
         
-    print("\n✅ Base de Testes Vs4.8.1 populada e auditada com sucesso!")
+    print("\n✅ Base de Testes Vs4.8 populada e auditada com sucesso!")
 
 if __name__ == "__main__":
     popular_banco()

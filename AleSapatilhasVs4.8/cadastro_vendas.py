@@ -212,31 +212,26 @@ class JanelaCadastroVendas(tk.Toplevel):
         self.ent_busca_cli.bind("<FocusOut>", self._cli_focus_out)
         self.ent_busca_cli.bind("<KeyRelease>", self._on_busca_cliente_key)
 
+        # Painel minimalista com borda para os dados do cliente
         self.frame_dados_cliente = tk.LabelFrame(
             col_dir, text=" Dados do cliente ", bg=self.bg_card, fg=self.cor_texto,
             font=("Segoe UI", 9, "bold"), relief="solid", borderwidth=1,
         )
-        self.frame_dados_cliente.grid(row=1, column=0, sticky="nsew", pady=4)
-        self.frame_dados_cliente.grid_rowconfigure(0, weight=1)
-        self.frame_dados_cliente.grid_columnconfigure(0, weight=1)
-
-        self.tree_cli_detalhes = ttk.Treeview(
-            self.frame_dados_cliente,
-            columns=("campo", "valor"),
-            show="headings",
-            height=6,
-            style="PDV.Cliente.Treeview",
+        self.frame_dados_cliente.grid(row=1, column=0, sticky="ew", pady=4)
+        
+        # Componente de texto plano para exibição minimalista e linear das informações
+        self.txt_cli_detalhes = tk.Text(
+            self.frame_dados_cliente, bg=self.bg_card, fg=self.cor_texto,
+            font=("Segoe UI", 9), relief="flat", height=4, width=40,
+            wrap="word", state="disabled", cursor="arrow"
         )
-        self.tree_cli_detalhes.heading("campo", text="CAMPO")
-        self.tree_cli_detalhes.heading("valor", text="VALOR")
-        self.tree_cli_detalhes.column("campo", width=120, anchor="w")
-        self.tree_cli_detalhes.column("valor", width=280, anchor="w")
-        self.tree_cli_detalhes.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.txt_cli_detalhes.pack(fill="both", expand=True, padx=8, pady=6)
 
         f_cart = tk.LabelFrame(
             col_dir, text=" 🛒 CARRINHO ", bg=self.bg_card, fg=self.cor_destaque,
             font=("Segoe UI", 10, "bold"), relief="solid", borderwidth=1,
         )
+        
         f_cart.grid(row=2, column=0, sticky="nsew")
         f_cart.grid_rowconfigure(0, weight=1)
         f_cart.grid_columnconfigure(0, weight=1)
