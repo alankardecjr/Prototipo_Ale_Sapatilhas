@@ -58,6 +58,16 @@ class JanelaCadastroVendas(tk.Toplevel):
             self.carregar_dados_cliente_completo(cid)
             if isinstance(cliente_selecionado, (tuple, list)) and len(cliente_selecionado) > 1:
                 self._definir_busca_cliente(cliente_selecionado[1])
+            if self.venda_id:
+                v = database.obter_venda_por_id(self.venda_id)
+                if v:
+                    self._carregar_itens_venda()
+                    self.ent_desconto.delete(0, tk.END)
+                    self.ent_desconto.insert(0, f"{float(v[6] or 0):.2f}")
+                    self.atualizar_view_carrinho()
+                    if v[11] == config.STATUS_VENDA_CANCELADA:
+                        self.lbl_modo.config(text="VENDA CANCELADA (somente consulta)")
+                        self.btn_finalizar.config(state="disabled")
         elif self.venda_id:
             v = database.obter_venda_por_id(self.venda_id)
             if v:
@@ -323,19 +333,23 @@ class JanelaCadastroVendas(tk.Toplevel):
             tree.insert("", "end", iid=row[0], values=(row[1], row[2] or "—", row[3] or "—"))
         tree.pack(fill="both", expand=True)
 
-        def selecionar(_e=None):
-            sel = tree.selection()
-            if not sel:
+        def selecionar(event=None):
+            iid = None
+            if hasattr(event, 'y'):
+                iid = tree.identify_row(event.y)
+            if not iid and tree.selection():
+                iid = tree.selection()[0]
+            if not iid:
                 return
-            cid = sel[0]
-            vals = tree.item(cid, "values")
+            tree.selection_set(iid)
+            vals = tree.item(iid, "values")
             self._definir_busca_cliente(vals[0])
-            self.carregar_dados_cliente_completo(cid)
+            self.carregar_dados_cliente_completo(iid)
             self._fechar_popup_clientes()
 
         tree.bind("<Double-1>", selecionar)
         tree.bind("<Return>", selecionar)
-        tree.bind("<ButtonRelease-1>", lambda e: self.after(80, selecionar))
+        tree.bind("<ButtonRelease-1>", lambda e: self.after(10, selecionar, e))
         self._popup_resultados = pop
 
     def _fechar_popup_clientes(self):
@@ -344,23 +358,16 @@ class JanelaCadastroVendas(tk.Toplevel):
         self._popup_resultados = None
 
     def _preencher_tree_cliente(self, c):
-        self.tree_cli_detalhes.delete(*self.tree_cli_detalhes.get_children())
-        campos = [
-            ("Nome", c[2]),
-            ("CPF/CNPJ", c[3] or "—"),
-            ("Telefone", c[4] or "—"),
-            ("E-mail", c[5] or "—"),
-            ("Aniversário", c[6] or "—"),
-            ("Calçado", c[7] or "—"),
-            ("Endereço", c[8] or "—"),
-            ("Bairro", c[9] or "—"),
-            ("Cidade", c[10] or "—"),
-            ("CEP", c[11] or "—"),
-            ("Limite crédito", f"R$ {float(c[13] or 0):.2f}"),
-            ("Status", c[15]),
-        ]
-        for campo, valor in campos:
-            self.tree_cli_detalhes.insert("", "end", values=(campo, valor))
+        texto = (
+            f"Nome: {c[2]} | CPF: {c[3] or '—'} | Fone: {c[4] or '—'}\n"
+            f"Logradouro: {c[8] or '—'} | Bairro: {c[9] or '—'} | CEP: {c[11] or '—'}\n"
+            f"Cidade: {c[10] or '—'}\n"
+            f"Observação: {c[12] or '—'}"
+        )
+        self.txt_cli_detalhes.config(state="normal")
+        self.txt_cli_detalhes.delete("1.0", tk.END)
+        self.txt_cli_detalhes.insert(tk.END, texto)
+        self.txt_cli_detalhes.config(state="disabled")
 
     def abrir_menu_ferramentas(self):
         menu = tk.Menu(self, tearoff=0)
@@ -605,7 +612,10 @@ class JanelaCadastroVendas(tk.Toplevel):
         if hasattr(self, "ent_desconto"):
             self.ent_desconto.delete(0, tk.END)
             self.ent_desconto.insert(0, "0.00")
-        self.tree_cli_detalhes.delete(*self.tree_cli_detalhes.get_children())
+        self.txt_cli_detalhes.config(state="normal")
+        self.txt_cli_detalhes.delete("1.0", tk.END)
+        self.txt_cli_detalhes.insert(tk.END, "Nenhum cliente selecionado.")
+        self.txt_cli_detalhes.config(state="disabled")
         self.ent_busca_cli.delete(0, tk.END)
         self.ent_busca_cli.insert(0, self.PLACEHOLDER_BUSCA_CLI)
         self.ent_busca_cli.config(fg="gray")

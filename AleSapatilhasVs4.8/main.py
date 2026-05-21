@@ -760,10 +760,16 @@ class SistemaAleSapatilhas:
             elif self.modo_atual == "contas_receber":
                 menu.add_command(label="Baixar / Receber parcela", command=self._abrir_financeiro_com_senha)
                 menu.add_command(label="Visualizar título", command=self.visualizar_despesa)
+                menu.add_separator()
+                for status in ["✓ Pago", "◎ Pendente", "⚠ Atrasado", "✗ Cancelado"]:
+                    menu.add_command(label=status, command=lambda s=status: self._mudar_status_despesa(s))
 
             elif self.modo_atual == "contas_pagar":
                 menu.add_command(label="Pagar / Editar despesa", command=self._abrir_financeiro_com_senha)
                 menu.add_command(label="Visualizar título", command=self.visualizar_despesa)
+                menu.add_separator()
+                for status in ["✓ Pago", "◎ Pendente", "⚠ Atrasado", "✗ Cancelado"]:
+                    menu.add_command(label=status, command=lambda s=status: self._mudar_status_despesa(s))
 
             menu.post(event.x_root, event.y_root)
 
@@ -845,9 +851,11 @@ class SistemaAleSapatilhas:
 
     def _mudar_status_despesa(self, novo_status):
         item = self.tree.selection()
-        if not item: 
+        if not item:
             return
-        
+        if not ui_utils.solicitar_senha_fluxo(self.root):
+            return
+
         id_banco = item[0]
         data_pagamento = None
 
@@ -863,33 +871,31 @@ class SistemaAleSapatilhas:
 
             hoje = datetime.now().strftime("%Y-%m-%d")
 
-            # Se já existir uma data lançada, pede confirmação para alterá-la
+            # Para status pago, registra a data atual se ainda não existir ou se confirmar alteração
             if data_existente:
                 data_formatada = self.formatar_data_exibicao(data_existente)
-                pergunta = f"Este registro já foi pago em {data_formatada}.\nDeseja alterar a data do pagamento para hoje ({datetime.now().strftime('%d/%m/%Y')})?"
+                pergunta = (
+                    f"Este registro já foi pago em {data_formatada}.\n"
+                    f"Deseja alterar a data do pagamento para hoje ({datetime.now().strftime('%d/%m/%Y')})?"
+                )
                 if messagebox.askyesno("Alterar Data de Pagamento", pergunta, parent=self.root):
                     data_pagamento = hoje
                 else:
-                    # Se o usuário responder "Não", mantém a data que já estava lá
                     data_pagamento = data_existente
             else:
-                # Se não havia data, define a data atual automaticamente
                 data_pagamento = hoje
         else:
-            # 2. Para qualquer outro status (Pendente, Atrasado, Cancelado), a data_pagamento vai como None (NULL)
             data_pagamento = None
 
-        # 3. Confirmação geral da mudança de status
         if messagebox.askyesno("Confirmar", f"Deseja realmente alterar o status do registro para '{novo_status}'?", parent=self.root):
             with database.conectar() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "UPDATE financeiro SET status = ?, data_pagamento = ? WHERE id = ?", 
+                    "UPDATE financeiro SET status = ?, data_pagamento = ? WHERE id = ?",
                     (novo_status, data_pagamento, id_banco)
                 )
                 conn.commit()
-            
-            # Atualiza a tela de fluxo de caixa para refletir as mudanças
+
             self.exibir_financeiro()
 
     def _mudar_status_venda(self, novo_status):
@@ -929,7 +935,8 @@ class SistemaAleSapatilhas:
         v = database.obter_venda_por_id(item[0])
         if v:
             dados_venda = {'id': v[0], 'desconto': v[6], 'forma': v[8], 'parcelas': v[9]}
-            JanelaCadastroVendas(self.root, dados_venda=dados_venda)
+            cliente_selecionado = (v[1], v[2], v[3])
+            JanelaCadastroVendas(self.root, cliente_selecionado=cliente_selecionado, dados_venda=dados_venda)
             self.exibir_vendas()
   
     def editar_despesa(self):
