@@ -18,7 +18,7 @@ import config
 
 # --- Configuração do Banco de Dados (sempre na pasta do projeto) ---
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(_BASE_DIR, "AleSapatilhasVs4.8.1db")
+DB_NAME = os.path.join(_BASE_DIR, "AleSapatilhasVs4.8.2db")
 
 def conectar():
     """Estabelece a conexão com suporte a chaves estrangeiras."""
@@ -216,6 +216,23 @@ def obter_nome_contato(contato_id):
         row = conn.execute("SELECT nome FROM clientes WHERE id = ?", (contato_id,)).fetchone()
         return row[0] if row else None
 
+
+def obter_contato_id_por_nome(nome, tipo=None):
+    if not nome:
+        return None
+    with conectar() as conn:
+        if tipo:
+            row = conn.execute(
+                "SELECT id FROM clientes WHERE tipo = ? AND nome = ? COLLATE NOCASE LIMIT 1",
+                (tipo, nome),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id FROM clientes WHERE nome = ? COLLATE NOCASE LIMIT 1",
+                (nome,),
+            ).fetchone()
+        return row[0] if row else None
+
 def listar_contatos(tipo=None, termo=""):
     with conectar() as conn:
         cursor = conn.cursor()
@@ -337,29 +354,34 @@ def registrar_interacao(cliente_id, tipo, assunto, detalhes, vendedor):
 
 # --- Funções de Vendas e Motores Financeiros ---
 def realizar_venda_crediario(cliente_id, lista_produtos, parcelas, desc_venda=0):
-    """Lógica de venda que alimenta a tabela 'receitas' via crediário.""" 
+    """Lógica de venda que alimenta a tabela 'receitas' via crediário."""
     with conectar() as conn:
         cursor = conn.cursor()
         total_bruto = sum(p['qtd'] * p['preco'] for p in lista_produtos)
         total_liquido = total_bruto - desc_venda
-        
-        cursor.execute("INSERT INTO vendas (cliente_id, valor_bruto, desconto, valor_total, forma_pagamento, qtd_parcelas) VALUES (?,?,?,?,?,?)",
-                       (cliente_id, total_bruto, desc_venda, total_liquido, 'Crediário', parcelas))
+
+        cursor.execute(
+            "INSERT INTO vendas (cliente_id, valor_bruto, desconto, valor_total, forma_pagamento, qtd_parcelas, status_venda, estoque_baixado) VALUES (?,?,?,?,?,?,?,?)",
+            (cliente_id, total_bruto, desc_venda, total_liquido, 'Crediário', parcelas, config.STATUS_VENDA_PENDENTE, 0)
+        )
         venda_id = cursor.lastrowid
 
         valor_parc = round(total_liquido / parcelas, 2)
         for i in range(parcelas):
-            venc = adicionar_meses(datetime.now(), i).strftime("%Y-%m-%d") # Chamada Corrigida sem a String 'Mensal'
-
-            cursor.execute("""INSERT INTO financeiro (tipo, venda_id, cliente_id, descricao, valor_base, valor, data_vencimento, parcelas_atual, total_parcelas, categoria, status) 
-                      VALUES ('Receita', ?,?,?,?,?,?,?,?, 'Venda', 'Pendente')""", 
-                   (venda_id, cliente_id, f"Parcela {i+1}/{parcelas} - Venda #{venda_id}", valor_parc, valor_parc, venc, i+1, parcelas))    
+            if i == parcelas - 1:
+                valor_parc = round(total_liquido - (valor_parc * (parcelas - 1)), 2)
+            venc = adicionar_meses(datetime.now(), i).strftime("%Y-%m-%d")
+            cursor.execute(
+                "INSERT INTO financeiro (tipo, venda_id, cliente_id, descricao, valor_base, valor, data_vencimento, parcelas_atual, total_parcelas, categoria, forma_pagamento, status) "
+                "VALUES ('Receita', ?, ?, ?, ?, ?, ?, ?, ?, 'Venda', 'Crediário', 'Pendente')",
+                (venda_id, cliente_id, f"Parcela {i+1}/{parcelas} - Venda #{venda_id}", valor_parc, valor_parc, venc, i+1, parcelas),
+            )
         conn.commit()
+        return True, "Venda por crediário registrada com sucesso.", venda_id
 
-def realizar_venda_pdv(cliente_id, lista_produtos, desconto_total=0):
+def realizar_venda_pdv(cliente_id, lista_produtos, desconto_total=0, forma_pagamento=None, valor_pago=0.0, parcelas=1):
     """
-    Registra venda no PDV sem dados de pagamento (status Pendente).
-    Gera títulos financeiros em aberto para liquidação em Gerenciar Receitas.
+    Registra venda no PDV. Pode criar venda pendente ou pagamento direto.
     Retorno: (sucesso, mensagem, venda_id)
     """
     import config as cfg
@@ -374,14 +396,17 @@ def realizar_venda_pdv(cliente_id, lista_produtos, desconto_total=0):
 
             total_bruto = sum(p['qtd'] * p['preco'] for p in lista_produtos)
             total_liquido = round(total_bruto - desconto_total, 2)
+            forma = forma_pagamento or cfg.FORMA_PAGAMENTO_PDV_PENDENTE
+            valor_pago = round(float(valor_pago or 0), 2)
+            parcelas = max(int(parcelas or 1), 1)
+            pago_total = valor_pago >= total_liquido - 0.01 and forma != cfg.FORMA_PAGAMENTO_PDV_PENDENTE
+            status_venda = cfg.STATUS_VENDA_FINALIZADA if pago_total else cfg.STATUS_VENDA_PDV_PENDENTE
+            estoque_baixado = 1 if pago_total else 0
 
-            cursor.execute("""
-                INSERT INTO vendas (
-                    cliente_id, valor_bruto, desconto, valor_total, forma_pagamento, qtd_parcelas,
-                    status_venda, estoque_baixado
-                ) VALUES (?, ?, ?, ?, ?, 1, ?, 0)
-            """, (cliente_id, total_bruto, desconto_total, total_liquido,
-                  cfg.FORMA_PAGAMENTO_PDV_PENDENTE, cfg.STATUS_VENDA_PDV_PENDENTE))
+            cursor.execute(
+                "INSERT INTO vendas (cliente_id, valor_bruto, desconto, valor_total, forma_pagamento, qtd_parcelas, status_venda, estoque_baixado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (cliente_id, total_bruto, desconto_total, total_liquido, forma, parcelas, status_venda, estoque_baixado),
+            )
             venda_id = cursor.lastrowid
 
             for p in lista_produtos:
@@ -392,20 +417,35 @@ def realizar_venda_pdv(cliente_id, lista_produtos, desconto_total=0):
 
             cursor.execute("SELECT nome FROM clientes WHERE id = ?", (cliente_id,))
             nome_cli = cursor.fetchone()[0]
-            cursor.execute("""
-                INSERT INTO financeiro (
-                    tipo, venda_id, cliente_id, id_agrupador, entidade_nome, descricao, valor, valor_base,
-                    parcelas_atual, total_parcelas, data_vencimento, categoria, recorrencia, status
-                ) VALUES ('Receita', ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, 'Venda', 'À receber', 'Pendente')
-            """, (
-                venda_id, cliente_id, venda_id, nome_cli,
-                f"Venda #{venda_id} — aguardando pagamento",
-                total_liquido, total_liquido,
-                datetime.now().strftime("%Y-%m-%d"),
-            ))
+
+            if pago_total:
+                valor_pago_registrado = min(valor_pago, total_liquido)
+                cursor.execute(
+                    "INSERT INTO financeiro (tipo, venda_id, cliente_id, id_agrupador, entidade_nome, descricao, valor, valor_base, valor_pago, forma_pagamento, parcelas_atual, total_parcelas, data_vencimento, data_pagamento, categoria, recorrencia, status) "
+                    "VALUES ('Receita', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Venda', 'Recebido PDV', 'Pago')",
+                    (venda_id, cliente_id, venda_id, nome_cli, f"Venda #{venda_id} — pagamento recebido", total_liquido, total_liquido, valor_pago_registrado, forma, 1, parcelas, datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%Y-%m-%d"), 'Venda'),
+                )
+                financeiro_id = cursor.lastrowid
+                cursor.execute(
+                    "INSERT INTO pagamentos (venda_id, financeiro_id, valor_pago, juros_pagos, descontos_pagos, forma_pagamento, data_pagamento, conta_bancaria, observacao) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (venda_id, financeiro_id, valor_pago_registrado, 0, 0, forma, datetime.now().strftime("%Y-%m-%d"), "", "Pagamento PDV"),
+                )
+            else:
+                valor_parcela = round(total_liquido / parcelas, 2)
+                for i in range(parcelas):
+                    if i == parcelas - 1:
+                        valor_parcela = round(total_liquido - (valor_parcela * (parcelas - 1)), 2)
+                    vencimento = adicionar_meses(datetime.now(), i).strftime("%Y-%m-%d")
+                    cursor.execute(
+                        "INSERT INTO financeiro (tipo, venda_id, cliente_id, id_agrupador, entidade_nome, descricao, valor, valor_base, forma_pagamento, parcelas_atual, total_parcelas, data_vencimento, categoria, recorrencia, status) "
+                        "VALUES ('Receita', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Venda', 'Parcelado', 'Pendente')",
+                        (venda_id, cliente_id, venda_id, nome_cli, f"Venda #{venda_id} — Parcela {i+1}/{parcelas}", valor_parcela, valor_parcela, forma, i + 1, parcelas, vencimento),
+                    )
 
             conn.commit()
-            return True, "Venda registrada. Confirme o pagamento em Gerenciar Receitas.", venda_id
+            if pago_total:
+                return True, "Venda finalizada e paga com sucesso.", venda_id
+            return True, "Venda registrada como pendente. Confirme o pagamento em Gerenciar Receitas.", venda_id
         except Exception as e:
             conn.rollback()
             return False, f"Erro ao registrar venda: {str(e)}", None
@@ -509,6 +549,33 @@ def baixar_estoque_venda(venda_id, cursor=None):
         except Exception as e:
             conn.rollback()
             return False, f"Erro ao baixar estoque: {str(e)}"
+
+
+def _atualizar_status_venda_apos_recebimento(cursor, venda_id):
+    cursor.execute(
+        "SELECT COUNT(*) FROM financeiro WHERE venda_id = ? AND tipo = 'Receita' AND status != 'Pago'",
+        (venda_id,),
+    )
+    pendentes = cursor.fetchone()[0]
+    if pendentes != 0:
+        return False, None
+
+    cursor.execute("SELECT estoque_baixado FROM vendas WHERE id = ?", (venda_id,))
+    row = cursor.fetchone()
+    if not row:
+        return False, None
+
+    if not row[0]:
+        ok, msg = baixar_estoque_venda(venda_id, cursor=cursor)
+        if ok:
+            return True, "Todos os títulos pagos. Estoque baixado e venda finalizada."
+        return True, f"Todos os títulos pagos, mas houve problema ao baixar estoque: {msg}"
+
+    cursor.execute(
+        "UPDATE vendas SET status_venda = ? WHERE id = ?",
+        (config.STATUS_VENDA_FINALIZADA, venda_id),
+    )
+    return True, "Todos os títulos pagos. Venda finalizada."
 
 
 def cancelar_venda(venda_id, motivo="Cancelamento solicitado"):
@@ -681,11 +748,11 @@ def registrar_pagamento_financeiro(financeiro_id, valor_pago, forma_pgto, data_p
     data_pagamento = data_pagamento or hoje
     with conectar() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT valor, valor_pago, tipo FROM financeiro WHERE id = ?", (financeiro_id,))
+        cursor.execute("SELECT valor, valor_pago, tipo, venda_id FROM financeiro WHERE id = ?", (financeiro_id,))
         row = cursor.fetchone()
         if not row:
             return False, "Lançamento não encontrado."
-        valor_titulo, valor_ja_pago, tipo = row
+        valor_titulo, valor_ja_pago, tipo, venda_id = row
         valor_pago = round(float(valor_pago), 2)
         total_pago = round((valor_ja_pago or 0) + valor_pago, 2)
         if total_pago > valor_titulo + 0.01:
@@ -701,8 +768,15 @@ def registrar_pagamento_financeiro(financeiro_id, valor_pago, forma_pgto, data_p
             UPDATE financeiro SET valor_pago = ?, status = ?, data_pagamento = ?, forma_pagamento = ?
             WHERE id = ?
         """, (total_pago, status, data_pagamento if total_pago > 0 else None, forma_pgto, financeiro_id))
+
+        mensagem = "Pagamento registrado."
+        if venda_id:
+            ok_status, status_msg = _atualizar_status_venda_apos_recebimento(cursor, venda_id)
+            if ok_status and status_msg:
+                mensagem = f"{mensagem} {status_msg}"
+
         conn.commit()
-        return True, "Pagamento registrado."
+        return True, mensagem
 
 # --- Financeiro e relatórios ---
 def obter_todos_registros_financeiros():
@@ -1027,4 +1101,4 @@ def listar_itens():
 
 if __name__ == "__main__":
     criar_tabelas()
-    print("✓ Banco de Dados Ale Sapatilhas Vs4.8.1db - Ativo.")
+    print("✓ Banco de Dados Ale Sapatilhas Vs4.8.2db - Ativo.")

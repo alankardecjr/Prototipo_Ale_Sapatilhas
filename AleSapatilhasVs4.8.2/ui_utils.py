@@ -67,16 +67,37 @@ def calcular_dimensoes_janela(root, largura_desejada=700, altura_desejada=850, m
         # Maximiza deixando espaço para barra de tarefas e bordas da janela
         root.geometry(f"{largura_tela}x{altura_tela - 70}+0+0")
     else:
-        # Usa dimensões padrão
-        # Verifica se o tamanho desejado cabe na tela
-        largura_final = min(largura_desejada, largura_tela - 20)
-        altura_final = min(altura_desejada, altura_tela - 100)
-        
-        # Centraliza a janela
+        centralizar_janela(root, None, largura_desejada, altura_desejada)
+
+
+def centralizar_janela(janela, parent=None, largura_desejada=700, altura_desejada=500, maximizar=False):
+    """Centraliza uma janela Toplevel no pai ou na tela."""
+    janela.update_idletasks()
+    largura_tela = janela.winfo_screenwidth()
+    altura_tela = janela.winfo_screenheight()
+
+    if maximizar:
+        janela.geometry(f"{largura_tela}x{altura_tela - 70}+0+0")
+        return
+
+    largura_final = min(largura_desejada, largura_tela - 40)
+    altura_final = min(altura_desejada, altura_tela - 80)
+    if parent:
+        parent.update_idletasks()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        x = px + max((pw - largura_final) // 2, 0)
+        y = py + max((ph - altura_final) // 2, 0)
+    else:
         x = (largura_tela - largura_final) // 2
         y = (altura_tela - altura_final) // 2
-        
-        root.geometry(f"{largura_final}x{altura_final}+{x}+{y}")
+
+    x = max(min(x, largura_tela - largura_final - 10), 0)
+    y = max(min(y, altura_tela - altura_final - 10), 0)
+    janela.geometry(f"{largura_final}x{altura_final}+{x}+{y}")
+
 
 def get_paleta():
     """Retorna a paleta de cores padronizada (cópia para painel de temas futuro)."""
@@ -360,6 +381,25 @@ def aplicar_estilo_foco_entry(ent, paleta=None):
     ent.bind("<Leave>", on_leave)
     ent.bind("<FocusIn>", on_focus_in)
     ent.bind("<FocusOut>", on_focus_out)
+
+
+def aplicar_hover_botao(btn, cor_base, paleta=None, cor_ativo=None):
+    """Aplica hover e mantém destaque ativo em botões"""
+    p = paleta or get_paleta()
+    btn._cor_base = cor_base
+    btn._cor_hover = p.get("cor_hover_btn")
+    btn._cor_ativo = cor_ativo or cor_base
+    btn._ativo = False
+
+    def _on_enter(_e):
+        btn.config(bg=btn._cor_hover)
+
+    def _on_leave(_e):
+        btn.config(bg=btn._cor_ativo if getattr(btn, "_ativo", False) else btn._cor_base)
+
+    btn.bind("<Enter>", _on_enter)
+    btn.bind("<Leave>", _on_leave)
+    return btn
 
 
 def criar_botao_rodape(parent, texto, comando, estilo="acao1", paleta=None):

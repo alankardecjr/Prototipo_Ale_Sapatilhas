@@ -79,9 +79,8 @@ class SistemaAleSapatilhas:
         ent.bind("<FocusIn>", on_focus_in); ent.bind("<FocusOut>", on_focus_out)
 
     def aplicar_hover(self, btn):
-        """Destaca botão do menu lateral ao passar o mouse."""
-        btn.bind("<Enter>", lambda e: btn.config(bg=self.cor_hover_btn))
-        btn.bind("<Leave>", lambda e: btn.config(bg=self.cor_btn_menu))
+        """Destaca botão do menu lateral ao passar o mouse e preserva o botão ativo."""
+        ui_utils.aplicar_hover_botao(btn, self.cor_btn_menu, paleta=ui_utils.get_paleta(), cor_ativo=self.cor_destaque)
 
     def setup_ui(self):
         """Monta sidebar, área de listagem, busca e bindings da Treeview."""
@@ -101,7 +100,7 @@ class SistemaAleSapatilhas:
 
         # (texto, callback, modo) — modo agrupa telas relacionadas na Treeview
         botoes = [
-            ("➕ NOVA VENDAS", self.abrir_cadastro_vendas, "vendas"),
+            ("➕ NOVA VENDA", self.abrir_cadastro_vendas, "vendas"),
             #("💰 GERAR RECEITAS", self.abrir_gerenciar_receitas, "financeiro"),
             ("", None, None),
             ("📑 LISTAR VENDAS", self.exibir_vendas, "vendas"),
@@ -206,19 +205,16 @@ class SistemaAleSapatilhas:
         }
 
         self.btn_filtrar = tk.Button(search_frame, text="⏳ FILTROS", command=self.abrir_menu_filtrar, **btn_estilo)
+        ui_utils.aplicar_hover_botao(self.btn_filtrar, self.cor_btn_menu, paleta=ui_utils.get_paleta())
         self.btn_filtrar.pack(side="left", padx=2, ipady=6)
-        self.btn_filtrar.bind("<Enter>", lambda e: self.btn_filtrar.config(bg=self.cor_hover_btn))
-        self.btn_filtrar.bind("<Leave>", lambda e: self.btn_filtrar.config(bg=self.cor_btn_menu))
 
         self.btn_limpar = tk.Button(search_frame, text="❌ LIMPAR", command=self.limpar_busca_e_filtros, **btn_estilo)
+        ui_utils.aplicar_hover_botao(self.btn_limpar, self.cor_btn_menu, paleta=ui_utils.get_paleta())
         self.btn_limpar.pack(side="left", padx=2, ipady=6)
-        self.btn_limpar.bind("<Enter>", lambda e: self.btn_limpar.config(bg=self.cor_hover_btn))
-        self.btn_limpar.bind("<Leave>", lambda e: self.btn_limpar.config(bg=self.cor_btn_menu))
 
         self.btn_utilidades = tk.Button(search_frame, text="➕ FERRAMENTAS", command=self.abrir_menu_utilidades, **btn_estilo)
+        ui_utils.aplicar_hover_botao(self.btn_utilidades, self.cor_btn_menu, paleta=ui_utils.get_paleta())
         self.btn_utilidades.pack(side="right", padx=2, ipady=6)
-        self.btn_utilidades.bind("<Enter>", lambda e: self.btn_utilidades.config(bg=self.cor_hover_btn))
-        self.btn_utilidades.bind("<Leave>", lambda e: self.btn_utilidades.config(bg=self.cor_btn_menu))
 
     def _remover_placeholder(self, event):
         """Remove texto cinza placeholder ao focar o campo de busca."""
@@ -486,8 +482,10 @@ class SistemaAleSapatilhas:
         """Destaca visualmente o botão ativo na barra lateral."""
         for texto, btn in self.botoes_por_texto.items():
             if btn == self.botao_menu_ativo:
+                btn._ativo = True
                 btn.config(bg=self.cor_destaque, fg="white")
             else:
+                btn._ativo = False
                 btn.config(bg=self.cor_btn_menu, fg="white")
 
     def confirmar_acao_menu(self, titulo, func, mensagem=None):
@@ -503,6 +501,22 @@ class SistemaAleSapatilhas:
         if item:
             self.tree.focus(item)
             self.tree.selection_set(item)
+
+    def _preservar_tree_ao_abrir(self, janela):
+        """Preserva seleção e posição da Treeview enquanto uma subjanela estiver aberta."""
+        yview = self.tree.yview()
+        selection = self.tree.selection()
+        self.root.wait_window(janela)
+        if yview:
+            try:
+                self.tree.yview_moveto(yview[0])
+            except Exception:
+                pass
+        if selection:
+            try:
+                self.tree.selection_set(selection)
+            except Exception:
+                pass
 
     # --- Função para preparar colunas da Treeview de acordo com o modo atual ---
     def preparar_colunas(self, colunas):
@@ -1024,7 +1038,7 @@ class SistemaAleSapatilhas:
         janela.configure(bg=self.bg_fundo)
         janela.transient(self.root)
         janela.grab_set()
-        ui_utils.calcular_dimensoes_janela(janela, largura_desejada=450, altura_desejada=690)
+        ui_utils.centralizar_janela(janela, parent=self.root, largura_desejada=450, altura_desejada=690)
         janela.resizable(True, True)
         
         main_frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
@@ -1070,6 +1084,7 @@ Forma de Pagamento: {dados[17]} ({dados[18]}x)
         txt_info.configure(yscrollcommand=scroll.set)
 
         tk.Button(main_frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white", font=("Arial Black", 10), command=janela.destroy).pack(pady=(10, 0))
+        self._preservar_tree_ao_abrir(janela)
     
     def visualizar_cliente(self):
         item = self.tree.selection()
@@ -1083,7 +1098,9 @@ Forma de Pagamento: {dados[17]} ({dados[18]}x)
         janela = tk.Toplevel(self.root)
         janela.title("Alê Sapatilhas - Formulario do Cliente")
         janela.configure(bg=self.bg_fundo)
-        ui_utils.calcular_dimensoes_janela(janela, largura_desejada=450, altura_desejada=550)
+        janela.transient(self.root)
+        janela.grab_set()
+        ui_utils.centralizar_janela(janela, parent=self.root, largura_desejada=450, altura_desejada=550)
         janela.resizable(True, True)
 
         frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
@@ -1111,7 +1128,10 @@ Status: {dados[13]}
         info_frame = tk.Frame(frame, bg=self.bg_card, relief="solid", borderwidth=1, padx=10, pady=10)
         info_frame.pack(fill="both", expand=True)
         tk.Label(info_frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Arial Black", 10), justify="center", anchor="center", wraplength=460).pack(fill="both", expand=True)
-        tk.Button(frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white", font=("Arial Black", 10), command=janela.destroy).pack(pady=10)
+        btn_fechar = tk.Button(frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white", font=("Arial Black", 10), command=janela.destroy)
+        ui_utils.aplicar_hover_botao(btn_fechar, self.cor_destaque, paleta=ui_utils.get_paleta(), cor_ativo=self.cor_destaque)
+        btn_fechar.pack(pady=10)
+        self._preservar_tree_ao_abrir(janela)
     
     
     def visualizar_despesa(self):
@@ -1147,7 +1167,7 @@ Status: {dados[13]}
         janela.configure(bg=self.bg_fundo)
         janela.transient(self.root)
         janela.grab_set()
-        ui_utils.calcular_dimensoes_janela(janela, largura_desejada=450, altura_desejada=550)
+        ui_utils.centralizar_janela(janela, parent=self.root, largura_desejada=450, altura_desejada=550)
         janela.resizable(True, True)
 
         frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
@@ -1170,7 +1190,10 @@ Recorrência: {recorrencia or 'Não Recorrente'}
         info_frame = tk.Frame(frame, bg=self.bg_card, relief="solid", borderwidth=1, padx=10, pady=10)
         info_frame.pack(fill="both", expand=True)
         tk.Label(info_frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto, font=("Arial Black", 10), justify="center", anchor="center", wraplength=460).pack(fill="both", expand=True)
-        tk.Button(frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white", font=("Arial Black", 10), command=janela.destroy).pack(pady=10)
+        btn_fechar = tk.Button(frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white", font=("Arial Black", 10), command=janela.destroy)
+        ui_utils.aplicar_hover_botao(btn_fechar, self.cor_destaque, paleta=ui_utils.get_paleta(), cor_ativo=self.cor_destaque)
+        btn_fechar.pack(pady=10)
+        self._preservar_tree_ao_abrir(janela)
 
     def visualizar_item(self):
         """Exibe ficha do produto (centralizado no shell principal)."""
@@ -1187,7 +1210,7 @@ Recorrência: {recorrencia or 'Não Recorrente'}
         janela.configure(bg=self.bg_fundo)
         janela.transient(self.root)
         janela.grab_set()
-        ui_utils.calcular_dimensoes_janela(janela, largura_desejada=450, altura_desejada=550)
+        ui_utils.centralizar_janela(janela, parent=self.root, largura_desejada=450, altura_desejada=550)
         janela.resizable(True, True)
 
         frame = tk.Frame(janela, bg=self.bg_fundo, padx=20, pady=20)
@@ -1214,8 +1237,11 @@ Status: {dados[12]}
         info_frame.pack(fill="both", expand=True, pady=(0, 15))
         tk.Label(info_frame, text=info_text.strip(), bg=self.bg_card, fg=self.cor_texto,
                  font=("Arial Black", 10), justify="center", anchor="center", wraplength=460).pack(fill="both", expand=True)
-        tk.Button(frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white",
-                  font=("Arial Black", 10), command=janela.destroy).pack()
+        btn_fechar = tk.Button(frame, text="FECHAR JANELA", bg=self.cor_destaque, fg="white",
+                  font=("Arial Black", 10), command=janela.destroy)
+        ui_utils.aplicar_hover_botao(btn_fechar, self.cor_destaque, paleta=ui_utils.get_paleta(), cor_ativo=self.cor_destaque)
+        btn_fechar.pack()
+        self._preservar_tree_ao_abrir(janela)
 
     # --- Função para atualizar a lista exibida com base no modo atual, garantindo que as alterações sejam refletidas imediatamente após ações de edição ou status ---
   
